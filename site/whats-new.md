@@ -6,7 +6,7 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
-## 0.2.18 — September 25, 2026
+## 0.2.19 — September 25, 2026
 
 - **The month in the sidebar.** A calendar under the top rows, one cell a day, shaded by how much of that day's note there is — deepening under today's as you write. Click a day for its note. [How it reads.](https://docs.glassine.ink/library/sidebar#the-calendar)
 - **Drag the rows into order.** Pick up a document in the tree and carry it: the rows step aside, the row glides into place, and the order holds as *Your order*. Drop it on a folder to move it there.
