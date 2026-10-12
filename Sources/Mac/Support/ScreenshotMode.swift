@@ -113,6 +113,28 @@ enum ScreenshotMode {
                     }
                 }
             }
+            // The sidebar shown and hidden in quick succession
+            // (`-glassine.shootToggle 6,0.12`: how many times, how far apart),
+            // for what the page does while it is pushed about.
+            if let spec = defaults.string(forKey: "glassine.shootToggle") {
+                let parts = spec.split(separator: ",").compactMap { Double($0) }
+                if parts.count == 2 {
+                    // From the middle of the document, where a reflow has
+                    // text above the window to move it by.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                        guard let editor = GlassineTextView.current, let length = editor.textStorage?.length else { return }
+                        editor.setSelectedRange(NSRange(location: length / 2, length: 0))
+                        editor.scrollRangeToVisible(editor.selectedRange())
+                        editor.typewriterScroll(animated: false)
+                    }
+                    for i in 0..<Int(parts[0]) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2 + Double(i) * parts[1]) {
+                            note("toggle \(i)")
+                            AppState.shared.toggleSidebar()
+                        }
+                    }
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 if let held = heldDrag {
                     capture(window, name: name, composite: composite, andQuit: false)

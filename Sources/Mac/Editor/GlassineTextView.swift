@@ -102,7 +102,12 @@ final class GlassineTextView: NSTextView {
         layoutManager.allowsNonContiguousLayout = false
         storage.addLayoutManager(layoutManager)
         let container = NSTextContainer(size: NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
+        // The column's width is set in updateInsets and nowhere else. Left to
+        // track the view, the container took the view's new width less the
+        // old margins every time the view was resized — a wrap at a width
+        // nobody asked for, then a second one back, for every frame of the
+        // sidebar's slide.
+        container.widthTracksTextView = false
         container.lineFragmentPadding = 0
         layoutManager.addTextContainer(container)
 
@@ -336,28 +341,57 @@ final class GlassineTextView: NSTextView {
         }
         let newInset = NSSize(width: side, height: top)
         let oldInset = textContainerInset
-        guard newInset != oldInset else { return }
+        let oldColumn = textContainer?.containerSize.width
+        guard newInset != oldInset || oldColumn != column else { return }
 
-        let clip = enclosingScrollView?.contentView
-        let oldOrigin = clip?.bounds.origin
+        // A new column width rewraps the text, and a new top inset moves all
+        // of it: either way every line below the top of the document lands
+        // somewhere else. The line being looked at is held where it is, so
+        // the page reflows around it rather than sliding under the window.
+        let moves = oldColumn != column || newInset.height != oldInset.height
+        let anchor = moves ? viewportAnchor() : nil
         textContainerInset = newInset
-        textContainer?.containerSize = NSSize(width: column, height: CGFloat.greatestFiniteMagnitude)
-
-        if newInset.height != oldInset.height {
-            // The whole document just shifted by the inset delta. Finish layout so the frame
-            // is current, then move the viewport by the same amount so nothing appears to jump.
-            if let tc = textContainer { layoutManager?.ensureLayout(for: tc) }
-            sizeToFit()
-            if let clip, let oldOrigin {
-                let delta = newInset.height - oldInset.height
-                let maxY = max(0, frame.height - clip.bounds.height)
-                let origin = NSPoint(x: oldOrigin.x, y: max(0, min(oldOrigin.y + delta, maxY)))
-                clip.setBoundsOrigin(origin)
-                enclosingScrollView?.reflectScrolledClipView(clip)
-            }
+        if oldColumn != column {
+            textContainer?.containerSize = NSSize(width: column, height: CGFloat.greatestFiniteMagnitude)
         }
+        if let anchor { hold(anchor) }
         needsDisplay = true
         updateCaret(animated: false)
+    }
+
+    /// The line the eye is on — the caret's when it is in view, otherwise the
+    /// first one showing — and how far down the viewport it sits.
+    private func viewportAnchor() -> (char: Int, offset: CGFloat)? {
+        guard let lm = layoutManager, let tc = textContainer, let storage = textStorage, storage.length > 0,
+              let clip = enclosingScrollView?.contentView, clip.bounds.height > 0 else { return nil }
+        let visible = clip.bounds
+        let caret = selectedRange().location
+        let caretTop = lineTop(of: caret)
+        if caretTop >= visible.minY, caretTop < visible.maxY { return (caret, caretTop - visible.minY) }
+        let glyph = lm.glyphIndex(for: NSPoint(x: 0, y: max(0, visible.minY - textContainerOrigin.y)), in: tc)
+        let char = lm.characterIndexForGlyph(at: glyph)
+        return (char, lineTop(of: char) - visible.minY)
+    }
+
+    /// Where the top of a character's line is, in the view.
+    private func lineTop(of char: Int) -> CGFloat {
+        guard let lm = layoutManager, let storage = textStorage, storage.length > 0 else { return 0 }
+        let glyph = lm.glyphIndexForCharacter(at: min(max(0, char), storage.length - 1))
+        return lm.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY + textContainerOrigin.y
+    }
+
+    /// Lays the text out as it now stands and scrolls so the anchored line is
+    /// as far down the viewport as it was — within the same pass, so no frame
+    /// is drawn with the page somewhere else.
+    private func hold(_ anchor: (char: Int, offset: CGFloat)) {
+        guard let lm = layoutManager, let tc = textContainer, let clip = enclosingScrollView?.contentView else { return }
+        lm.ensureLayout(for: tc)
+        sizeToFit()
+        let maxY = max(0, frame.height - clip.bounds.height)
+        let y = max(0, min((lineTop(of: anchor.char) - anchor.offset).rounded(), maxY))
+        guard y != clip.bounds.origin.y else { return }
+        clip.setBoundsOrigin(NSPoint(x: clip.bounds.origin.x, y: y))
+        enclosingScrollView?.reflectScrolledClipView(clip)
     }
 
     /// A capsule reaches a few points past its glyphs, and a chip at the start
