@@ -6,8 +6,10 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
-## 0.2.22 — September 26, 2026
+## 0.2.22 — October 12, 2026
 
+- **The page holds still while the sidebar comes and goes.** Showing or hiding the sidebar, even quickly, no longer makes the text jump: the line you are on stays where it is while the column finds its width.
+- **A new document is not a daily note.** [[⌘N]] after writing in a day's note used to file the new document under Daily. It now goes to the top of the library.
 - **`---` is a rule the moment it is typed.** The third hyphen draws the rule and drops the caret to the line under it. No Return.
 - **Eight more Review styles.** Reader, Gallery, Newspaper, Typewriter, Notebook, Thesis, Verse and Blueprint join the six — fourteen ways to see the page. [All of them.](https://docs.glassine.ink/review/review#styles)
 - **A rule stays a rule.** Clicking on a horizontal rule no longer turns it back into three dashes.
