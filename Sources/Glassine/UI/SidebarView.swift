@@ -499,7 +499,7 @@ struct FolderRow: View {
     @State private var hovering = false
 
     private var expanded: Bool { state.settings.isExpanded(folder.id) }
-    private var isTarget: Bool { state.selectedFolder == folder.id }
+    private var isTarget: Bool { state.newDocumentFolder == folder.id }
 
     var body: some View {
         Button {
