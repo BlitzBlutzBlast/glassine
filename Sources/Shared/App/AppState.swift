@@ -673,8 +673,18 @@ final class AppState: ObservableObject {
 
     // MARK: - Creating
 
+    /// Where a new document goes when nobody names a folder: the folder last
+    /// worked in. The Daily folder is the exception — opening a day's note
+    /// makes it the folder last worked in, and a plain new document made
+    /// after that would be filed as a daily note it is not. Those go to the
+    /// top of the library; "New Document Here" on Daily still puts one there.
+    var newDocumentFolder: String {
+        let daily = DailyNotes.folder
+        return selectedFolder == daily || selectedFolder.hasPrefix(daily + "/") ? "" : selectedFolder
+    }
+
     func newDocument(in folder: String? = nil) {
-        let target = folder ?? selectedFolder
+        let target = folder ?? newDocumentFolder
         do {
             let ref = try library.createDocument(in: target)
             open(ref)
