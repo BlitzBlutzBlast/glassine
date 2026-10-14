@@ -8,6 +8,7 @@ every release. Newest version first. Three to five lines a version, each
 
 ## 0.2.24 — October 14, 2026
 
+- **Tables.** A pipe table reads as a table in the editor — columns lined up in any font, hairlines where the pipes are, the header in bold — and Tab moves between its cells. `/table` starts one.
 - **A paste keeps its shape.** Lists keep their bullets and numbers, headings their level, bold and links their marks, tables their columns — written as Markdown, from whatever app it came from. [[⌥⇧⌘V]] pastes the plain string as it is.
 
 ## 0.2.23 — October 13, 2026

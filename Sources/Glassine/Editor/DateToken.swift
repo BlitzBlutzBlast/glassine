@@ -150,14 +150,26 @@ final class GlassineLayoutManager: NSLayoutManager {
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let storage = textStorage else { super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin); return }
         let chars = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        var hasRule = false
-        storage.enumerateAttribute(Syntax.ruleKey, in: chars, options: []) { value, _, stop in
-            if value != nil { hasRule = true; stop.pointee = true }
+        // The same for a table's pipes and its separator: laid out, never
+        // drawn, hairlines in their place (drawBackground).
+        var skipped: [NSRange] = []
+        for key in [Syntax.ruleKey, MarkdownTable.pipeKey, MarkdownTable.ruleKey] {
+            storage.enumerateAttribute(key, in: chars, options: []) { value, range, _ in
+                if value != nil { skipped.append(range) }
+            }
         }
-        guard hasRule else { super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin); return }
-        storage.enumerateAttribute(Syntax.ruleKey, in: chars, options: []) { value, range, _ in
-            if value != nil { return }
-            let piece = NSIntersectionRange(self.glyphRange(forCharacterRange: range, actualCharacterRange: nil), glyphsToShow)
+        guard !skipped.isEmpty else { super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin); return }
+        skipped.sort { $0.location < $1.location }
+        var at = chars.location
+        for r in skipped {
+            if r.location > at {
+                let piece = NSIntersectionRange(self.glyphRange(forCharacterRange: NSRange(location: at, length: r.location - at), actualCharacterRange: nil), glyphsToShow)
+                if piece.length > 0 { super.drawGlyphs(forGlyphRange: piece, at: origin) }
+            }
+            at = max(at, r.upperBoundValue)
+        }
+        if at < chars.upperBoundValue {
+            let piece = NSIntersectionRange(self.glyphRange(forCharacterRange: NSRange(location: at, length: chars.upperBoundValue - at), actualCharacterRange: nil), glyphsToShow)
             if piece.length > 0 { super.drawGlyphs(forGlyphRange: piece, at: origin) }
         }
     }
@@ -181,6 +193,36 @@ final class GlassineLayoutManager: NSLayoutManager {
             let y = (baseline - font.xHeight * 0.55).rounded() - 0.5
             color.setFill()
             NSRect(x: x, y: y, width: width, height: 1).fill()
+        }
+        // A table: a hairline the height of the row where each pipe is, and a
+        // rule across each cell of the separator row.
+        storage.enumerateAttribute(MarkdownTable.pipeKey, in: chars, options: []) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            for i in range.location..<range.upperBoundValue {
+                let g = self.glyphIndexForCharacter(at: i)
+                guard g < self.numberOfGlyphs else { continue }
+                let line = self.lineFragmentRect(forGlyphAt: g, effectiveRange: nil)
+                let loc = self.location(forGlyphAt: g)
+                let advance = self.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: self.textContainer(forGlyphAt: g, effectiveRange: nil)!).width
+                // The pipe's own glyph width, before any padding kerned onto it.
+                let font = storage.attribute(.font, at: i, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 16)
+                let bar = min(advance, ("|" as NSString).size(withAttributes: [.font: font]).width)
+                let x = (origin.x + line.minX + loc.x + bar / 2).rounded() - 0.5
+                color.setFill()
+                NSRect(x: x, y: origin.y + line.minY, width: 1, height: line.height).fill()
+            }
+        }
+        storage.enumerateAttribute(MarkdownTable.ruleKey, in: chars, options: []) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            let glyphs = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard glyphs.length > 0, let container = self.textContainer(forGlyphAt: glyphs.location, effectiveRange: nil) else { return }
+            let line = self.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            let rect = self.boundingRect(forGlyphRange: glyphs, in: container)
+            let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 16)
+            let baseline = origin.y + line.minY + self.location(forGlyphAt: glyphs.location).y
+            let y = (baseline - font.xHeight * 0.55).rounded() - 0.5
+            color.setFill()
+            NSRect(x: origin.x + rect.minX, y: y, width: rect.width, height: 1).fill()
         }
     }
 

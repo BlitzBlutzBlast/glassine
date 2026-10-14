@@ -83,6 +83,16 @@ enum ScreenshotMode {
                 if defaults.bool(forKey: "glassine.shootSlash") {
                     editor.insertText("/", replacementRange: editor.selectedRange())
                 }
+                // Tab pressed so many times (`-glassine.shootTab 3`), a beat apart,
+                // for what Tab does where the caret is — a table's cells, say.
+                if let n = defaults.string(forKey: "glassine.shootTab").flatMap(Int.init), n > 0 {
+                    for i in 0..<n {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3 + Double(i) * 0.25) {
+                            GlassineTextView.current?.insertTab(nil)
+                            if i == n - 1 { AppState.shared.document?.saveNow(); note("tabbed \(n)") }
+                        }
+                    }
+                }
                 // A paste of whatever is on the clipboard (`-glassine.shootPaste 1`),
                 // saved at once, so a test can read what it became.
                 if defaults.bool(forKey: "glassine.shootPaste") {

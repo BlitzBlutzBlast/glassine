@@ -783,13 +783,31 @@ final class GlassineTextView: NSTextView {
     /// Anywhere else both keys keep their usual meaning.
     override func insertTab(_ sender: Any?) {
         if slashAnchor != nil { pickSlashItem(slashSelection); return }
+        if moveBetweenCells(backward: false) { return }
         if config.continueLists, shiftListItems(deeper: true) { return }
         super.insertTab(sender)
     }
 
     override func insertBacktab(_ sender: Any?) {
+        if moveBetweenCells(backward: true) { return }
         if config.continueLists, shiftListItems(deeper: false) { return }
         super.insertBacktab(sender)
+    }
+
+    /// Tab inside a table: the next cell, its words selected; from the last
+    /// cell, a new row. ⇧Tab goes the other way.
+    private func moveBetweenCells(backward: Bool) -> Bool {
+        guard let storage = textStorage, slashAnchor == nil,
+              let move = MarkdownTable.nextCell(from: selectedRange().location, in: storage, backward: backward) else { return false }
+        if let insert = move.insert {
+            let at = NSRange(location: insert.at, length: 0)
+            guard shouldChangeText(in: at, replacementString: insert.text) else { return false }
+            storage.replaceCharacters(in: at, with: insert.text)
+            didChangeText()
+        }
+        setSelectedRange(move.selection)
+        scrollRangeToVisible(move.selection)
+        return true
     }
 
     /// The number a numbered item should carry at `width`, judged by the item
@@ -1288,6 +1306,9 @@ final class GlassineTextView: NSTextView {
         case .block(let kind): setBlock(kind)
         case .codeBlock: insertOwnLine("```\n\n```", caretOffset: 4)
         case .divider: insertOwnLine("---", caretOffset: 4)
+        case .table:
+            insertOwnLine("| Column | Column |\n| --- | --- |\n|  |  |", caretOffset: 2)
+            setSelectedRange(NSRange(location: selectedRange().location, length: 6))   // the first heading, ready to be typed over
         case .link: markdownLink(nil)
         case .chip: markdownChip(nil)
         case .date(let days): insertDate(daysFromToday: days)

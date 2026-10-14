@@ -36,6 +36,8 @@ final class MarkdownStyler {
     private var baseParagraph: NSParagraphStyle!
     private var quoteParagraph: NSParagraphStyle!
     private var codeParagraph: NSParagraphStyle!
+    private var tableRowParagraph: NSParagraphStyle!
+    private var tableLastRowParagraph: NSParagraphStyle!
     private var listStyleCache: [String: NSParagraphStyle] = [:]
     private var lastFenceCount = -1
 
@@ -56,6 +58,13 @@ final class MarkdownStyler {
         let indent = (config.fontSize * 1.1).rounded()
         quoteParagraph = config.indentedParagraphStyle(firstLineIndent: indent, headIndent: indent, tight: false)
         codeParagraph = config.indentedParagraphStyle(firstLineIndent: 0, headIndent: 0, tight: true)
+        let row = config.baseParagraphStyle()
+        row.firstLineHeadIndent = 0
+        row.paragraphSpacing = 0
+        tableRowParagraph = row
+        let lastRow = config.baseParagraphStyle()
+        lastRow.firstLineHeadIndent = 0
+        tableLastRowParagraph = lastRow
         listStyleCache = [:]
         lastFenceCount = -1
     }
@@ -112,11 +121,20 @@ final class MarkdownStyler {
             lastFenceCount = 0
         }
 
+        // A table's columns are measured across all its rows, so an edit in
+        // one row restyles the whole table.
+        if target.length > 0 || target.location < length {
+            target = NSUnionRange(target, MarkdownTable.blockRange(ns, around: target.location))
+            target = NSUnionRange(target, MarkdownTable.blockRange(ns, around: max(target.location, target.upperBoundValue - 1)))
+            target = ns.paragraphRange(for: target.clamped(to: length))
+        }
+
         storage.beginEditing()
         // Reset the whole target range in one go, then decorate paragraph by paragraph.
         storage.setAttributes(baseAttrs, range: target)
 
         var insideFence = hasFences ? isInsideFence(at: target.location, fenceStarts: fenceStarts) : false
+        var pipeLines: [NSRange] = []
         ns.enumerateSubstrings(in: target, options: [.byParagraphs, .substringNotRequired]) { _, paraRange, enclosing, _ in
             let paraText = ns.substring(with: paraRange)
             let trimmed = paraText.trimmingCharacters(in: .whitespaces)
@@ -130,9 +148,29 @@ final class MarkdownStyler {
                 self.applyCodeLine(storage, paraRange: paraRange, enclosing: enclosing, isFence: false)
                 return
             }
+            if MarkdownTable.looksLikeRow(paraText) { pipeLines.append(paraRange) }
             self.styleParagraph(storage, ns: ns, text: paraText, paraRange: paraRange, enclosing: enclosing)
         }
+        // Runs of pipe lines whose second line is a separator are tables.
+        var run: [NSRange] = []
+        func flush() {
+            if let table = MarkdownTable.table(ns, paragraphs: run) { layOutTable(table, storage) }
+            run = []
+        }
+        for line in pipeLines {
+            if let last = run.last, line.location != last.upperBoundValue + 1 { flush() }
+            run.append(line)
+        }
+        flush()
         storage.endEditing()
+    }
+
+    private func layOutTable(_ table: MarkdownTable.Table, _ storage: NSTextStorage) {
+        let theme = config.theme
+        MarkdownTable.layOut(table, in: storage, config: config,
+                             pipeColor: theme.text.withAlpha(theme.isDark ? 0.22 : 0.18),
+                             ruleColor: theme.text.withAlpha(theme.isDark ? 0.3 : 0.24),
+                             headerFont: boldFont, rowParagraph: tableRowParagraph, lastRowParagraph: tableLastRowParagraph)
     }
 
     // MARK: - Fences

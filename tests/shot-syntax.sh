@@ -32,6 +32,19 @@ Inline `code` sits in a box; a [link](https://glassine.ink) keeps only its words
 The paragraph with the caret shows its marks, so it can be edited as written.
 DOC
 printf '# Rule\n\nBefore the rule, a line of text.\n\n---\n\nAfter the rule, another line.\n' > "$LIB/Rule.md"
+cat > "$LIB/Table.md" <<'DOC'
+# Reading list
+
+A table reads as a table, whatever the font.
+
+| Book | Author | Pages | Read |
+| --- | --- | ---: | :---: |
+| The Peregrine | J. A. Baker | 191 | yes |
+| **Pilgrim at Tinker Creek** | Annie Dillard | 290 | no |
+| A Field Guide to Getting Lost | Rebecca Solnit | 206 | @September 6, 2026 |
+
+And a line after it.
+DOC
 mkdir -p "$T"; : > "$T/log.txt"
 shoot() {
   local name=$1 hide=$2 caret=$3; shift 3
@@ -61,6 +74,9 @@ case "${1:-all}" in
   carets) for sh in bar pin serif wedge ghost comet glow hollow; do EXTRA_JSON='"caretShape":"'$sh'","caretBlink":"none","caretWidth":4,' shoot "syntax-caret-$sh" false 40 -glassine.shootSelect 40,0; done ;;
   caret) sh=$2; EXTRA_JSON='"caretShape":"'$sh'","caretBlink":"none","caretWidth":4,' shoot "syntax-caret-$sh" false 40 -glassine.shootSelect 40,0 ;;
   trash) EXTRA_JSON='"sidebarVisible":true,' shoot syntax-trash true 40 -glassine.launchView trash ;;
+  table) DOC=Table.md shoot syntax-table false 60 ;;
+  tablehidden) DOC=Table.md shoot syntax-table-hidden true 60 ;;
+  tabletab) n=${2:-5}; DOC=Table.md shoot syntax-table-tab false 70 -glassine.shootSelect 70,0 -glassine.shootTab "$n" -glassine.shootDelay 6; cat "$LIB/Table.md" ;;
   settings) sec=${2:-type}; EXTRA_JSON='"sidebarVisible":true,' shoot "syntax-settings-$sec" true 40 -glassine.launchView "settings:$sec" ;;
   settingslight) sec=${2:-type}; THEME=paper EXTRA_JSON='"sidebarVisible":true,' shoot "syntax-settings-light-$sec" true 40 -glassine.launchView "settings:$sec" ;;
   settingsfind) q=${2:-blink}; EXTRA_JSON='"sidebarVisible":true,' shoot "syntax-settings-find-$q" true 40 -glassine.launchView settings:library -glassine.settingsQuery "$q" ;;

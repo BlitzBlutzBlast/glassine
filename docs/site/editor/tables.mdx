@@ -1,0 +1,32 @@
+---
+title: "Tables"
+description: "A pipe table reads as a table in the editor — columns lined up, hairlines where the pipes are — and Tab moves between its cells."
+icon: "table"
+---
+
+A table is written the way Markdown writes one, and the file keeps every pipe and dash:
+
+```
+| Book | Author | Pages |
+| --- | --- | ---: |
+| The Peregrine | J. A. Baker | 191 |
+| Pilgrim at Tinker Creek | Annie Dillard | 290 |
+```
+
+The editor shows it as a table. Each column is as wide as its widest cell, whatever the font — the narrower cells are padded to fit, so the columns line up in Helvetica as they would in a monospace face. The pipes are drawn as hairlines the height of the row, the separator's dashes as a rule under the header, and the header row in the bold weight. Nothing is added to the file; move the caret through a row and every character is still there.
+
+A column's alignment comes from the separator, as it does everywhere: `---` or `:---` for left, `---:` for right (numbers, usually), `:---:` for centre. Bold, italics, links, chips and dates work inside a cell as they do anywhere, and a cell can be empty.
+
+## Moving about
+
+**Tab** goes to the next cell and selects what is in it, so typing replaces it; **⇧Tab** goes back. Tab from the last cell of the last row adds a row. Outside a table Tab keeps its other meanings — nesting a list item, picking from the slash menu.
+
+## Starting one
+
+`/table` in the [slash menu](/editor/formatting#the-slash-menu) writes a two-column table with a header, the first heading selected and ready to be typed over. A table [pasted](/editor/markdown#pasting-from-elsewhere) from a web page, a spreadsheet or a document arrives as a pipe table already.
+
+## In Review and on paper
+
+[Review](/review/review), the page beside the editor and the PDF draw the same table with real rows and columns, in each style's own way — ruled in Glass and GitHub, open in Book, tight in Mono.
+
+A row wider than the page wraps rather than being cut off; the table still reads, if less neatly, and everything in it can be reached.

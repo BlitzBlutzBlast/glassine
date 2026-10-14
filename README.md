@@ -165,6 +165,10 @@ The mosaic view (⌘P, the grid row at the top of the sidebar, Esc from the edit
 
 ⌘⇧C copies the whole document as Markdown; ⌥⌘C copies it as rich text (RTF and HTML go on the clipboard, so Mail, Notes, Slack and Google Docs keep headings, bold, lists and links). The copy button at the bottom-right of the editor does Markdown on click, with rich text one click-and-hold away, and both are in the right-click menus in the sidebar and All Documents.
 
+## Tables
+
+A pipe table shows as a table in the editor: each column as wide as its widest cell (the narrower cells are padded, in any font), hairlines where the pipes are, a rule under the header, the header in bold — and the file keeps every pipe and dash. Tab moves to the next cell and selects it; ⇧Tab goes back; Tab from the last cell adds a row. `/table` starts one.
+
 ## Pasting
 
 ⌘V reads the rich flavour of the clipboard — what a browser, Word, Pages, Notes or Google Docs actually put there — and writes it as the Markdown the editor would have written: `-` and `1.` for the lists, nested by their depth and numbered from one; `#` for a heading that was one; `**`, `*`, `~~` and `` ` `` for the weights; `[text](url)` for a link; a pipe table for a table; a fence round a block of code. The plain flavour, which most apps strip of its bullets and numbers, is used only when there is nothing richer. Text copied out of Glassine itself is Markdown already and goes in untouched. ⌥⇧⌘V (Edit → Paste as Plain Text) pastes the plain string as it is.
