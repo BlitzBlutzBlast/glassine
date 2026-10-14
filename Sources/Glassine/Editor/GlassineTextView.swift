@@ -533,9 +533,39 @@ final class GlassineTextView: NSTextView {
         return ok
     }
 
+    /// A paste keeps the shape of what was copied: the rich flavour of the
+    /// clipboard, read for its lists, headings, weights and links, written
+    /// as the Markdown the editor would have written (PasteMarkdown). Text
+    /// copied out of Glassine goes in as it is.
     override func paste(_ sender: Any?) {
         if linkSelectionFromClipboard() { return }
-        pasteAsPlainText(sender)
+        guard let text = PasteMarkdown.text(from: .general) else { pasteAsPlainText(sender); return }
+        insertText(text, replacementRange: selectedRange())
+    }
+
+    /// Edit → Paste as Plain Text (⌥⇧⌘V): the clipboard's plain string,
+    /// nothing read into it, for the time the conversion is not what was wanted.
+    @objc func pasteRaw(_ sender: Any?) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        insertText(text, replacementRange: selectedRange())
+    }
+
+    /// Copies out of the editor carry a mark, so a paste back in is never
+    /// converted: the text is Markdown already.
+    override func copy(_ sender: Any?) {
+        super.copy(sender)
+        markOwnClipboard()
+    }
+
+    override func cut(_ sender: Any?) {
+        super.cut(sender)
+        markOwnClipboard()
+    }
+
+    private func markOwnClipboard() {
+        let pb = NSPasteboard.general
+        pb.addTypes([PasteMarkdown.ownType], owner: nil)
+        pb.setString("1", forType: PasteMarkdown.ownType)
     }
 
     /// A URL pasted over selected words links them instead of replacing them:

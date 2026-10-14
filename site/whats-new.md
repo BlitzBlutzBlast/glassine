@@ -6,6 +6,10 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
+## 0.2.24 — October 14, 2026
+
+- **A paste keeps its shape.** Lists keep their bullets and numbers, headings their level, bold and links their marks, tables their columns — written as Markdown, from whatever app it came from. [[⌥⇧⌘V]] pastes the plain string as it is.
+
 ## 0.2.23 — October 13, 2026
 
 - **Move to Trash asks first.** [[⌘⌫]] names the document and waits: Return moves it, Esc keeps it, and [[⌘Z]] still puts it back.

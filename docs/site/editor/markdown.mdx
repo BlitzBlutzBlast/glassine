@@ -7,6 +7,10 @@ icon: "text"
 
 The file is plain Markdown. The editor shows it styled — headings larger, emphasis in weight, code in a box — but leaves every mark in place, dimmed to the theme's syntax colour, so what you see is what is in the file. There is no rendered mode to fall out of and no hidden formatting; Review, when you want the finished page, is [one key away](/review/review). If you would rather not see the marks at all, [hide them](/editor/formatting#hiding-the-markdown): the file stays the same and the sentence you are writing still shows its syntax.
 
+## Pasting from elsewhere
+
+⌘V reads the rich flavour of the clipboard — what a browser, Word, Pages, Notes or Google Docs actually put there — and writes it as the Markdown the editor would have written: `-` and `1.` for the lists, nested by their depth and numbered from one; `#` for a heading that was one; `**`, `*`, `~~` and `` ` `` for the weights; `[text](url)` for a link; a [pipe table](/editor/tables) for a table; a fence round a block of code. The plain flavour, which most apps strip of its bullets and numbers, is used only when there is nothing richer, and even then `•` becomes `-` and `1)` becomes `1.`. Text copied out of Glassine itself is Markdown already and goes in untouched. If a paste is not what you wanted, ⌥⇧⌘V (Edit → Paste as Plain Text) pastes the plain string exactly as it is.
+
 ## What gets styled
 
 | You type | You see |

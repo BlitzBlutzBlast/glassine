@@ -56,6 +56,7 @@ struct ShortcutSheet: View {
         Group(title: "Copy & view", rows: [
             ("⌘⇧C", "Copy as Markdown"),
             ("⌥⌘C", "Copy as rich text"),
+            ("⌥⇧⌘V", "Paste as plain text"),
             ("⌃⌘T", "Typewriter scrolling"),
             ("⌃⌘F", "Focus mode"),
             ("⌃⌘M", "Hide Markdown syntax"),

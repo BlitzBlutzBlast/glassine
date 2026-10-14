@@ -304,6 +304,9 @@ struct GlassineCommands: Commands {
         }
 
         CommandGroup(after: .pasteboard) {
+            Button("Paste as Plain Text") { send(#selector(GlassineTextView.pasteRaw(_:))) }
+                .keyboardShortcut("v", modifiers: [.command, .option, .shift])
+                .disabled(state.document == nil || state.galleryOnScreen || state.reviewMode)
             Divider()
             Button("Copy Document as Markdown") { state.copyCurrentDocument(asMarkdown: true) }
                 .keyboardShortcut("c", modifiers: [.command, .shift])

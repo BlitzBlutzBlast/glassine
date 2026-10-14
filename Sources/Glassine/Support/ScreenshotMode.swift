@@ -83,6 +83,13 @@ enum ScreenshotMode {
                 if defaults.bool(forKey: "glassine.shootSlash") {
                     editor.insertText("/", replacementRange: editor.selectedRange())
                 }
+                // A paste of whatever is on the clipboard (`-glassine.shootPaste 1`),
+                // saved at once, so a test can read what it became.
+                if defaults.bool(forKey: "glassine.shootPaste") {
+                    editor.paste(nil)
+                    AppState.shared.document?.saveNow()
+                    note("pasted")
+                }
                 // A second selection a beat later (`-glassine.shootSelectThen 12,0`),
                 // for what happens when the caret leaves a line; and a trip
                 // through Review and back (`-glassine.shootBounce review`).
