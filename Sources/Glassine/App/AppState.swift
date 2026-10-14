@@ -65,11 +65,15 @@ final class AppState: ObservableObject {
     enum Prompt: Identifiable {
         case newFolder(parent: String)
         case rename(path: String, isFolder: Bool)
+        /// "Move to the Trash?" — asked before any trip to the Trash, so a
+        /// stray ⌘⌫ never takes the page with it.
+        case trash(path: String, isFolder: Bool)
 
         var id: String {
             switch self {
             case .newFolder(let p): return "newFolder:\(p)"
             case .rename(let p, _): return "rename:\(p)"
+            case .trash(let p, _): return "trash:\(p)"
             }
         }
     }
@@ -223,6 +227,7 @@ final class AppState: ObservableObject {
         case "review": if document != nil { reviewMode = true }
         case "daily": showDaily()
         case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.backdrop.index
+        case "trash": trashCurrentDocument()   // the "Move to the Trash?" sheet, for a picture of it
         case let view? where view.hasPrefix("settings"):
             showingSettings = true
             let name = view.split(separator: ":").dropFirst().first.map(String.init) ?? ""
@@ -924,7 +929,15 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Every way to the Trash — ⌘⌫, the File menu, a row's menu, a card's —
+    /// comes through here and asks first. The move itself is `trashNow`.
     func trash(_ rel: String) {
+        let isFolder = library.url(forRelativePath: rel).isDirectoryURL
+        pendingPrompt = .trash(path: rel, isFolder: isFolder)
+    }
+
+    /// The move, once the question has been answered.
+    func trashNow(_ rel: String) {
         undoableTrash(track(rel), label: "Move to Trash")
     }
 

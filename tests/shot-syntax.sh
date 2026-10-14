@@ -60,6 +60,7 @@ case "${1:-all}" in
   bookdark) EXTRA_JSON='"reviewStyle":"bookDark",' shoot syntax-bookdark false 0 -glassine.launchView review -glassine.shootDelay 7 ;;
   carets) for sh in bar pin serif wedge ghost comet glow hollow; do EXTRA_JSON='"caretShape":"'$sh'","caretBlink":"none","caretWidth":4,' shoot "syntax-caret-$sh" false 40 -glassine.shootSelect 40,0; done ;;
   caret) sh=$2; EXTRA_JSON='"caretShape":"'$sh'","caretBlink":"none","caretWidth":4,' shoot "syntax-caret-$sh" false 40 -glassine.shootSelect 40,0 ;;
+  trash) EXTRA_JSON='"sidebarVisible":true,' shoot syntax-trash true 40 -glassine.launchView trash ;;
   settings) sec=${2:-type}; EXTRA_JSON='"sidebarVisible":true,' shoot "syntax-settings-$sec" true 40 -glassine.launchView "settings:$sec" ;;
   settingslight) sec=${2:-type}; THEME=paper EXTRA_JSON='"sidebarVisible":true,' shoot "syntax-settings-light-$sec" true 40 -glassine.launchView "settings:$sec" ;;
   settingsfind) q=${2:-blink}; EXTRA_JSON='"sidebarVisible":true,' shoot "syntax-settings-find-$q" true 40 -glassine.launchView settings:library -glassine.settingsQuery "$q" ;;

@@ -6,6 +6,10 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
+## 0.2.23 — October 13, 2026
+
+- **Move to Trash asks first.** [[⌘⌫]] names the document and waits: Return moves it, Esc keeps it, and [[⌘Z]] still puts it back.
+
 ## 0.2.22 — October 12, 2026
 
 - **The page holds still while the sidebar comes and goes.** Showing or hiding the sidebar, even quickly, no longer makes the text jump: the line you are on stays where it is while the column finds its width.

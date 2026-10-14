@@ -69,8 +69,14 @@ struct ContentView: View {
         .preferredColorScheme(theme.colorScheme)
         .ignoresSafeArea()
         .sheet(item: $state.pendingPrompt) { prompt in
-            NamePromptSheet(prompt: prompt)
-                .environmentObject(state)
+            Group {
+                if case .trash(let path, let isFolder) = prompt {
+                    TrashPromptSheet(path: path, isFolder: isFolder)
+                } else {
+                    NamePromptSheet(prompt: prompt)
+                }
+            }
+            .environmentObject(state)
         }
         .alert("Something went wrong", isPresented: Binding(
             get: { state.errorMessage != nil },
@@ -148,6 +154,7 @@ struct NamePromptSheet: View {
         switch prompt {
         case .newFolder: return "New Folder"
         case .rename(_, let isFolder): return isFolder ? "Rename Folder" : "Rename Document"
+        case .trash: return ""
         }
     }
 
@@ -195,6 +202,53 @@ struct NamePromptSheet: View {
         case .rename(let path, let isFolder):
             state.pendingPrompt = nil
             state.rename(path, to: name, isFolder: isFolder)
+        case .trash:
+            break
         }
+    }
+}
+
+/// "Move to the Trash?" — asked before every trip there, since ⌘⌫ sits a
+/// finger away from ⌘⇧⌫ and the Delete key. Return moves it, Esc keeps it.
+struct TrashPromptSheet: View {
+    @EnvironmentObject var state: AppState
+    let path: String
+    let isFolder: Bool
+
+    private var name: String {
+        let last = (path as NSString).lastPathComponent
+        if isFolder { return last }
+        if let title = state.library.document(withID: path)?.title, !title.isEmpty { return title }
+        return (last as NSString).deletingPathExtension
+    }
+
+    private var question: String {
+        isFolder
+            ? "Move the folder “\(name)” and everything in it to the Trash?"
+            : "Move “\(name)” to the Trash?"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(question)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("It can be put back with ⌘Z, or from the Trash.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { state.pendingPrompt = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Move to Trash", role: .destructive) {
+                    state.pendingPrompt = nil
+                    state.trashNow(path)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 8)
+        }
+        .padding(20)
+        .frame(width: 360)
     }
 }

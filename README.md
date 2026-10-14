@@ -127,7 +127,7 @@ New documents start as "Untitled" and take their file name from the first line a
 | ⇥ / ⇧⇥ | Nest or un-nest a list item — bullets, numbers, and tasks; numbered items renumber to fit, and Return on an empty nested item steps back out |
 | ⌘R | Rename |
 | ⌘⇧⌫ | Shelve — out of the sidebar, Recents and All Documents, into the Shelf section at the bottom; Unshelve puts it back where it was |
-| ⌘⌫ | Move to Trash (it goes to the macOS Trash, so it's recoverable) |
+| ⌘⌫ | Move to Trash (asks first; it goes to the macOS Trash, so it's recoverable) |
 | — | Check a task (click its box in the editor or in Review) and, a moment later, it sinks below the last unfinished item in its list, nested items in tow; uncheck it and it rises back to where it was. Settings → Typing turns that off |
 | — | Drag a task box or a list bullet or number up or down to reorder the list, nested items in tow |
 | ⌘Z ⇧⌘Z | Undo and redo — typing first, then file operations: a new document, a rename, a move, a duplicate, a trash |
