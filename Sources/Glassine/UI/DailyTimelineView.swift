@@ -257,9 +257,19 @@ final class TimelineWalker: ObservableObject {
     @Published var offset: Double = 0
     var maxDepth: Double = 0
     private var monitor: Any?
+    /// The corridor on screen, for a self-shot to walk.
+    static weak var current: TimelineWalker?
+
+    /// One day further back (or forward, negative), settling the way a scroll does.
+    func walk(by days: Double) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+            offset = min(maxDepth, max(0, (offset + days).rounded()))
+        }
+    }
 
     func install() {
         uninstall()
+        TimelineWalker.current = self
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, let window = event.window, AppDelegate.isMainWindow(window) else { return event }
             let step = Double(event.scrollingDeltaY) / 140

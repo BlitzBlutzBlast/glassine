@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import ImageIO
 
 /// Lets the app photograph itself, for the App Store listing.
@@ -182,30 +183,64 @@ enum ScreenshotMode {
 
     // MARK: - A script of actions, and a run of frames
 
+    /// One clock for the whole run: the script's times and every frame's time are
+    /// seconds since the window was placed, read from the same host clock, and both
+    /// are written to <name>-times.txt so the film can be put together to the frame.
+    private static var clockStart: CFTimeInterval = CACurrentMediaTime()
+    private static var timeLog: [String] = []
+    private static func now() -> Double { CACurrentMediaTime() - clockStart }
+
     private static func schedule(_ script: String) {
+        clockStart = CACurrentMediaTime()
+        let base = DispatchTime.now()
         for step in script.split(separator: ";") {
             let parts = step.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
             guard parts.count >= 2, let t = Double(parts[0].trimmingCharacters(in: .whitespaces)) else { continue }
             let kind = parts[1], arg = parts.count > 2 ? parts[2] : ""
-            DispatchQueue.main.asyncAfter(deadline: .now() + t) { perform(kind, arg) }
+            // Every deadline from the one base, so nothing accumulates.
+            DispatchQueue.main.asyncAfter(deadline: base + t) {
+                timeLog.append(String(format: "a %.4f %.4f %@ %@", now(), t, kind, arg))
+                perform(kind, arg)
+            }
         }
     }
+
+    /// What a page copied from the web carries: a list, or a table.
+    private static let clipboards: [String: (html: String, plain: String)] = [
+        "shopping": ("<h2>Shopping</h2><ul><li>Milk</li><li><b>Eggs</b>, a dozen</li></ul>", "Shopping\nMilk\nEggs, a dozen"),
+        "table": ("<table><tr><th>Book</th><th>Pages</th></tr><tr><td>The Peregrine</td><td>191</td></tr><tr><td>Pilgrim at Tinker Creek</td><td>290</td></tr></table>",
+                  "Book\tPages\nThe Peregrine\t191\nPilgrim at Tinker Creek\t290"),
+    ]
 
     private static func perform(_ kind: String, _ arg: String) {
         let app = AppState.shared
         note("script \(kind) \(arg)")
         switch kind {
         case _ where kind.hasPrefix("type"):
-            // Characters at a typist's pace ("type@30" for 30 ms each); "\n" in the text is Return.
+            // Characters at a typist's pace ("type@30" for 30 ms each, "type@0" all at
+            // once); "\n" in the text is Return.
             let text = arg.replacingOccurrences(of: "\\n", with: "\n")
             let pace = (kind.split(separator: "@").dropFirst().first.flatMap { Double($0) } ?? 55) / 1000
+            let put: (Character) -> Void = { ch in
+                guard let editor = GlassineTextView.current else { return }
+                if ch == "\n" { editor.insertNewline(nil) } else { editor.insertText(String(ch), replacementRange: NSRange(location: NSNotFound, length: 0)) }
+            }
+            if pace == 0 { text.forEach(put); return }
             for (i, ch) in text.enumerated() {
-                DispatchQueue.main.asyncAfter(deadline: .now() + pace * Double(i)) {
-                    guard let editor = GlassineTextView.current else { return }
-                    if ch == "\n" { editor.insertNewline(nil) } else { editor.insertText(String(ch), replacementRange: editor.selectedRange()) }
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + pace * Double(i)) { put(ch) }
             }
         case "paste": GlassineTextView.current?.paste(nil)
+        case "warm":
+            // Rich-text conversion is slow the first time; do it once, off camera.
+            if let clip = clipboards["shopping"] {
+                _ = try? NSAttributedString(data: Data(clip.html.utf8), options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil)
+            }
+        case "pastehtml":
+            guard let clip = clipboards[arg] else { return }
+            let pb = NSPasteboard.general
+            pb.clearContents(); pb.declareTypes([.html, .string], owner: nil)
+            pb.setData(Data(clip.html.utf8), forType: .html); pb.setString(clip.plain, forType: .string)
+            GlassineTextView.current?.paste(nil)
         case "click":
             // A click at a point in the window, in points from its top left.
             let parts = arg.split(separator: ",").compactMap { Double($0) }
@@ -229,12 +264,17 @@ enum ScreenshotMode {
             let parts = arg.split(separator: ",").compactMap { Int($0) }
             if parts.count == 2 { GlassineTextView.current?.setSelectedRange(NSRange(location: parts[0], length: parts[1])) }
             else if let p = parts.first { GlassineTextView.current?.setSelectedRange(NSRange(location: p, length: 0)) }
+        case "end":
+            if let editor = GlassineTextView.current, let n = editor.textStorage?.length { editor.setSelectedRange(NSRange(location: n, length: 0)) }
         case "pages": for ref in app.library.allDocuments.reversed() { app.open(ref) }
         case "open": app.open(relativePath: arg)
+        case "card": if let ref = app.library.document(withID: arg) { app.open(ref, fromCard: true) }
         case "step": app.stepCarousel(backward: arg == "back")
         case "commit": app.commitCarousel()
+        case "prev": app.switchToPreviousPage()
         case "gallery": app.showGallery()
         case "daily": app.showDaily()
+        case "walk": TimelineWalker.current?.walk(by: Double(arg) ?? 1)
         case "esc": app.escapeFromEditor()
         case "review": app.toggleReview()
         case "beside": app.toggleReviewBeside()
@@ -260,6 +300,8 @@ enum ScreenshotMode {
     private static let writers = DispatchQueue(label: "glassine.shots", qos: .userInitiated, attributes: .concurrent)
     private static let bookkeeping = DispatchQueue(label: "glassine.shots.count")
 
+    /// Frames until the clock reads `until` (or `count` frames), each stamped with
+    /// its time; JPEG unless `-glassine.shootPNG 1`.
     private static func captureRun(_ window: NSWindow, name: String, count: Int, fps: Double) {
         let id = CGWindowID(window.windowNumber)
         let screenHeight = NSScreen.screens.first?.frame.height ?? 0
@@ -269,32 +311,42 @@ enum ScreenshotMode {
         slot[0] = UnsafeRawPointer(bitPattern: UInt(id))
         guard let array = CFArrayCreate(kCFAllocatorDefault, slot, 1, nil) else { finish(name: name, error: "no window array"); return }
         let stem = (name as NSString).deletingPathExtension
-        var taken = 0, written = 0
-        let t0 = Date()
+        let until = UserDefaults.standard.string(forKey: "glassine.shootUntil").flatMap(Double.init)
+        let png = UserDefaults.standard.bool(forKey: "glassine.shootPNG")
+        let type = (png ? "public.png" : "public.jpeg") as CFString
+        let ext = png ? "png" : "jpg"
+        let options = [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary
+        var taken = 0, written = 0, done = false
         var timer: Timer?
+        let close: () -> Void = {
+            let log = outputFolder.appendingPathComponent(stem + "-times.txt")
+            try? (timeLog.joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+            note(String(format: "frames %d, last at %.3f", taken, now()))
+            finish(name: name, error: nil)
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / fps, repeats: true) { tm in
+            if done { return }
             let i = taken
+            let t = now()
+            guard let image = CGImage(windowListFromArrayScreenBounds: rect, windowArray: array, imageOption: [.bestResolution]) else { return }
             taken += 1
-            if let image = CGImage(windowListFromArrayScreenBounds: rect, windowArray: array, imageOption: [.bestResolution]) {
-                writers.async {
-                    let url = outputFolder.appendingPathComponent(String(format: "%@-%03d.png", stem, i))
-                    if let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) {
-                        CGImageDestinationAddImage(dest, image, nil); CGImageDestinationFinalize(dest)
-                    }
-                    bookkeeping.sync { written += 1 }
-                    if i == count - 1 || bookkeeping.sync(execute: { written }) == count {
-                        DispatchQueue.main.async {
-                            if bookkeeping.sync(execute: { written }) == count {
-                                note(String(format: "frames %d at %.1f fps in %.2fs", count, fps, Date().timeIntervalSince(t0)))
-                                finish(name: name, error: nil)
-                            }
-                        }
-                    }
+            timeLog.append(String(format: "f %d %.4f", i, t))
+            let last = (until.map { t >= $0 } ?? false) || taken >= count
+            if last { done = true; tm.invalidate(); timer = nil }
+            let total = taken
+            writers.async {
+                let url = outputFolder.appendingPathComponent(String(format: "%@-%04d.%@", stem, i, ext))
+                if let dest = CGImageDestinationCreateWithURL(url as CFURL, type, 1, nil) {
+                    CGImageDestinationAddImage(dest, image, png ? nil : options); CGImageDestinationFinalize(dest)
                 }
-            } else {
-                bookkeeping.sync { written += 1 }
+                let w = bookkeeping.sync { () -> Int in written += 1; return written }
+                if done && w == total { DispatchQueue.main.async { close() } }
             }
-            if taken >= count { tm.invalidate(); timer = nil; slot.deallocate() }
+            if last {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    if bookkeeping.sync(execute: { written }) == total { close() }
+                }
+            }
         }
         RunLoop.main.add(timer!, forMode: .common)
     }

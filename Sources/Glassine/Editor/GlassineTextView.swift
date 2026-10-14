@@ -65,7 +65,8 @@ final class GlassineTextView: NSTextView {
     private let dropBar = CALayer()
     // Checked-off tasks waiting to sink, by their line text
     private var pendingSinks: [String: DispatchWorkItem] = [:]
-    static let sinkDelay: TimeInterval = 1.6
+    /// How long a checked task waits before it sinks. A self-shot can set it (`-glassine.sinkDelay`) to land on a beat.
+    static let sinkDelay: TimeInterval = UserDefaults.standard.string(forKey: "glassine.sinkDelay").flatMap(Double.init) ?? 1.6
 
     // Editing bookkeeping
     private var pendingEditRange: NSRange?
@@ -550,14 +551,31 @@ final class GlassineTextView: NSTextView {
     override func paste(_ sender: Any?) {
         if linkSelectionFromClipboard() { return }
         guard let text = PasteMarkdown.text(from: .general) else { pasteAsPlainText(sender); return }
-        insertText(text, replacementRange: selectedRange())
+        insertVerbatim(text)
+    }
+
+    /// Pasted text goes in exactly as it is. Through insertText it would be
+    /// treated as typing, and the smart-dash pass that follows typing turned a
+    /// table's `| --- |` rule into em dashes a moment later — the table came
+    /// apart. Written straight to the storage, as one undoable step, it stays
+    /// Markdown.
+    private func insertVerbatim(_ text: String) {
+        guard let storage = textStorage else { return }
+        let range = selectedRange()
+        guard shouldChangeText(in: range, replacementString: text) else { return }
+        storage.replaceCharacters(in: range, with: NSAttributedString(string: text, attributes: typingAttributes))
+        didChangeText()
+        let end = NSRange(location: range.location + (text as NSString).length, length: 0)
+        setSelectedRange(end)
+        scrollRangeToVisible(end)
+        undoManager?.setActionName("Paste")
     }
 
     /// Edit → Paste as Plain Text (⌥⇧⌘V): the clipboard's plain string,
     /// nothing read into it, for the time the conversion is not what was wanted.
     @objc func pasteRaw(_ sender: Any?) {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
-        insertText(text, replacementRange: selectedRange())
+        insertVerbatim(text)
     }
 
     /// Copies out of the editor carry a mark, so a paste back in is never
@@ -636,11 +654,14 @@ final class GlassineTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        var replacementRange = replacementRange
         // A finished "@today" / "@yesterday" / "@tomorrow" becomes a date when the next
-        // space or punctuation mark arrives.
+        // space or punctuation mark arrives. The date is longer than the word, so a
+        // range the caller worked out beforehand no longer points at the caret: the
+        // character goes where the expansion left the selection.
         if let s = string as? String, s.count == 1, let ch = s.first,
-           ch == " " || ch == "\t" || ",.;:!?)]".contains(ch) {
-            expandDateShortcutIfNeeded()
+           ch == " " || ch == "\t" || ",.;:!?)]".contains(ch), expandDateShortcutIfNeeded() {
+            replacementRange = NSRange(location: NSNotFound, length: 0)
         }
         // Three hyphens are a rule, not an em dash and a hyphen: while a line
         // holds nothing but dashes the smart-dash substitution stands down, and
