@@ -6,6 +6,11 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
+## 0.2.25 — October 14, 2026
+
+- **⌃Tab too.** Hold ⌃ and press Tab and the open pages fan out, the same as ⌥Tab; ⇧ steps back. Whichever you held, letting it go opens the page.
+- **A long page comes up at once.** Switching to a document of a few thousand words took seconds; the editor was laying the text out over and over, from inside its own measurement. It no longer does.
+
 ## 0.2.24 — October 14, 2026
 
 - **A tour, the first time.** Eight cards over the page: what Glassine is, and the backdrop, theme, type, caret and modes chosen on the spot. Help → Tour of Glassine brings it back.
