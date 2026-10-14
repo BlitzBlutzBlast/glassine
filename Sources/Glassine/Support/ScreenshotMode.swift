@@ -152,6 +152,19 @@ enum ScreenshotMode {
                     }
                 }
             }
+            // A timed script and a run of frames, for the promo film: the app
+            // performs its own motion and photographs it.
+            //   -glassine.shootScript "0.5:type:Hello;2.0:cmd:review;3.0:key:esc"
+            //   -glassine.shootFrames 72 -glassine.shootFPS 24
+            // Each action fires at its time (seconds after the window is placed);
+            // the frames start at the shoot delay, one every 1/fps, named
+            // <name>-000.png on, and the app quits once the last is written.
+            if let script = defaults.string(forKey: "glassine.shootScript") { schedule(script) }
+            if let n = defaults.string(forKey: "glassine.shootFrames").flatMap(Int.init), n > 0 {
+                let fps = defaults.string(forKey: "glassine.shootFPS").flatMap(Double.init) ?? 24
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { captureRun(window, name: name, count: n, fps: fps) }
+                return
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 if let held = heldDrag {
                     capture(window, name: name, composite: composite, andQuit: false)
@@ -165,6 +178,125 @@ enum ScreenshotMode {
                 }
             }
         }
+    }
+
+    // MARK: - A script of actions, and a run of frames
+
+    private static func schedule(_ script: String) {
+        for step in script.split(separator: ";") {
+            let parts = step.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 2, let t = Double(parts[0].trimmingCharacters(in: .whitespaces)) else { continue }
+            let kind = parts[1], arg = parts.count > 2 ? parts[2] : ""
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { perform(kind, arg) }
+        }
+    }
+
+    private static func perform(_ kind: String, _ arg: String) {
+        let app = AppState.shared
+        note("script \(kind) \(arg)")
+        switch kind {
+        case _ where kind.hasPrefix("type"):
+            // Characters at a typist's pace ("type@30" for 30 ms each); "\n" in the text is Return.
+            let text = arg.replacingOccurrences(of: "\\n", with: "\n")
+            let pace = (kind.split(separator: "@").dropFirst().first.flatMap { Double($0) } ?? 55) / 1000
+            for (i, ch) in text.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + pace * Double(i)) {
+                    guard let editor = GlassineTextView.current else { return }
+                    if ch == "\n" { editor.insertNewline(nil) } else { editor.insertText(String(ch), replacementRange: editor.selectedRange()) }
+                }
+            }
+        case "paste": GlassineTextView.current?.paste(nil)
+        case "click":
+            // A click at a point in the window, in points from its top left.
+            let parts = arg.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 2, let window = mainWindow() {
+                let p = NSPoint(x: parts[0], y: window.frame.height - parts[1])
+                window.makeKey(); post(.leftMouseDown, at: p, in: window)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { post(.leftMouseUp, at: p, in: window) }
+            }
+        case "key":
+            guard let editor = GlassineTextView.current else { return }
+            switch arg {
+            case "return": editor.insertNewline(nil)
+            case "tab": editor.insertTab(nil)
+            case "backtab": editor.insertBacktab(nil)
+            case "esc": app.escapeFromEditor()
+            default: break
+            }
+        case "cmd": app.availableCommands.first(where: { $0.id == arg })?.action()
+        case "task": GlassineTextView.current?.toggleTask(ordinal: Int(arg) ?? 0)
+        case "select":
+            let parts = arg.split(separator: ",").compactMap { Int($0) }
+            if parts.count == 2 { GlassineTextView.current?.setSelectedRange(NSRange(location: parts[0], length: parts[1])) }
+            else if let p = parts.first { GlassineTextView.current?.setSelectedRange(NSRange(location: p, length: 0)) }
+        case "pages": for ref in app.library.allDocuments.reversed() { app.open(ref) }
+        case "open": app.open(relativePath: arg)
+        case "step": app.stepCarousel(backward: arg == "back")
+        case "commit": app.commitCarousel()
+        case "gallery": app.showGallery()
+        case "daily": app.showDaily()
+        case "esc": app.escapeFromEditor()
+        case "review": app.toggleReview()
+        case "beside": app.toggleReviewBeside()
+        case "style": if let st = ReviewStyle(rawValue: arg) { app.settings.data.reviewStyle = st }
+        case "theme": app.chooseTheme(arg)
+        case "backdrop": app.settings.data.backdrop = arg
+        case "frost": if let v = Double(arg) { app.settings.data.backdropFrost = v }
+        case "shape": if let sh = CaretShape(rawValue: arg) { app.settings.data.caretShape = sh }
+        case "syntax": app.toggleHideSyntax()
+        case "focus": app.toggleFocus()
+        case "typewriter": app.toggleTypewriter()
+        case "sidebar": app.toggleSidebar()
+        case "search":
+            app.focusSearch()
+            for (i, ch) in arg.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35 + 0.06 * Double(i)) { app.searchText.append(ch) }
+            }
+        case "settings": app.showingSettings = true
+        default: break
+        }
+    }
+
+    private static let writers = DispatchQueue(label: "glassine.shots", qos: .userInitiated, attributes: .concurrent)
+    private static let bookkeeping = DispatchQueue(label: "glassine.shots.count")
+
+    private static func captureRun(_ window: NSWindow, name: String, count: Int, fps: Double) {
+        let id = CGWindowID(window.windowNumber)
+        let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+        let f = window.frame
+        let rect = CGRect(x: f.minX, y: screenHeight - f.maxY, width: f.width, height: f.height)
+        let slot = UnsafeMutablePointer<UnsafeRawPointer?>.allocate(capacity: 1)
+        slot[0] = UnsafeRawPointer(bitPattern: UInt(id))
+        guard let array = CFArrayCreate(kCFAllocatorDefault, slot, 1, nil) else { finish(name: name, error: "no window array"); return }
+        let stem = (name as NSString).deletingPathExtension
+        var taken = 0, written = 0
+        let t0 = Date()
+        var timer: Timer?
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / fps, repeats: true) { tm in
+            let i = taken
+            taken += 1
+            if let image = CGImage(windowListFromArrayScreenBounds: rect, windowArray: array, imageOption: [.bestResolution]) {
+                writers.async {
+                    let url = outputFolder.appendingPathComponent(String(format: "%@-%03d.png", stem, i))
+                    if let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) {
+                        CGImageDestinationAddImage(dest, image, nil); CGImageDestinationFinalize(dest)
+                    }
+                    bookkeeping.sync { written += 1 }
+                    if i == count - 1 || bookkeeping.sync(execute: { written }) == count {
+                        DispatchQueue.main.async {
+                            if bookkeeping.sync(execute: { written }) == count {
+                                note(String(format: "frames %d at %.1f fps in %.2fs", count, fps, Date().timeIntervalSince(t0)))
+                                finish(name: name, error: nil)
+                            }
+                        }
+                    }
+                }
+            } else {
+                bookkeeping.sync { written += 1 }
+            }
+            if taken >= count { tm.invalidate(); timer = nil; slot.deallocate() }
+        }
+        RunLoop.main.add(timer!, forMode: .common)
     }
 
     // MARK: - A synthetic drag

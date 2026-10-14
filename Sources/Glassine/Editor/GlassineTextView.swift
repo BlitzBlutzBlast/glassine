@@ -2233,6 +2233,18 @@ final class GlassineTextView: NSTextView {
     }
 
     /// `[ ]` ↔ `[x]` without moving the caret. Typing an x by hand still works, of course.
+    /// The n-th task box toggled, as a click on it would — for the promo's self-shots.
+    func toggleTask(ordinal: Int) {
+        guard let storage = textStorage else { return }
+        var seen = 0, hit: Int?
+        storage.enumerateAttribute(TaskBox.attributeKey, in: NSRange(location: 0, length: storage.length)) { value, range, stop in
+            guard value != nil else { return }
+            if seen == ordinal { hit = range.location; stop.pointee = true }
+            seen += 1
+        }
+        if let i = hit { toggleTaskBox(at: i) }
+    }
+
     private func toggleTaskBox(at index: Int) {
         guard let storage = textStorage else { return }
         var range = NSRange(location: 0, length: 0)
