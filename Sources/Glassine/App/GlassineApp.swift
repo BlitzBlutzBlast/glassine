@@ -432,6 +432,7 @@ struct GlassineCommands: Commands {
         CommandGroup(replacing: .help) {
             Button("Glassine Shortcuts") { withWindow { state.showingShortcuts.toggle() } }
                 .keyboardShortcut("/", modifiers: .command)
+            Button("Tour of Glassine") { withWindow { state.showingSettings = false; state.showingTour = true } }
             Button("Open Library Folder") { state.revealLibrary() }
             #if canImport(Sparkle)
             Button("Check for Updates…") { Updater.shared.check() }

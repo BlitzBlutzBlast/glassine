@@ -64,9 +64,16 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.985)))
                     .zIndex(11)
             }
+
+            if state.showingTour {
+                TourView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                    .zIndex(12)
+            }
         }
         .animation(.easeOut(duration: 0.16), value: state.showingShortcuts)
         .animation(.easeOut(duration: 0.16), value: state.showingSettings)
+        .animation(.easeOut(duration: 0.22), value: state.showingTour)
         .animation(.easeOut(duration: 0.14), value: state.showingSearch)
         .animation(.easeOut(duration: 0.16), value: state.showingCommandBar)
         .animation(.easeOut(duration: 0.18), value: state.carousel == nil)

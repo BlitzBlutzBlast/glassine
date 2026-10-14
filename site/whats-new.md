@@ -8,6 +8,7 @@ every release. Newest version first. Three to five lines a version, each
 
 ## 0.2.24 — October 14, 2026
 
+- **A tour, the first time.** Eight cards over the page: what Glassine is, and the backdrop, theme, type, caret and modes chosen on the spot. Help → Tour of Glassine brings it back.
 - **Open pages.** A document stays open until you close it ([[⌘W]]). No tabs: hold ⌥ and press Tab, and the open pages fan out across the window; let go to open one. A tap flips to the page before. [How it works.](https://docs.glassine.ink/library/pages)
 - **Tables.** A pipe table reads as a table in the editor — columns lined up in any font, hairlines where the pipes are, the header in bold — and Tab moves between its cells. `/table` starts one.
 - **A paste keeps its shape.** Lists keep their bullets and numbers, headings their level, bold and links their marks, tables their columns — written as Markdown, from whatever app it came from. [[⌥⇧⌘V]] pastes the plain string as it is.

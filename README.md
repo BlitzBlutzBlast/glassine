@@ -167,6 +167,10 @@ The mosaic view (⌘P, the grid row at the top of the sidebar, Esc from the edit
 
 ⌘⇧C copies the whole document as Markdown; ⌥⌘C copies it as rich text (RTF and HTML go on the clipboard, so Mail, Notes, Slack and Google Docs keep headings, bold, lists and links). The copy button at the bottom-right of the editor does Markdown on click, with rich text one click-and-hold away, and both are in the right-click menus in the sidebar and All Documents.
 
+## The tour
+
+The first launch opens a short tour over the page — what Glassine is, then the backdrop, the theme, the type, the caret, the writing modes and the pages, each chosen on the card and seen at once on the page behind. Help → Tour of Glassine brings it back; everything in it is in Settings.
+
 ## Open pages
 
 A document stays open as a page until you close it (⌘W), and the pages sit in a stack with the one you are writing on top — no row of tabs. Hold ⌥ and press Tab: the page steps back and the open pages fan out across it as cards, each the page in little, in the order they were last used, the page before this one already highlighted. Tab steps, ⇧Tab steps back, ⌫ closes one, Esc leaves things, and letting go of ⌥ opens the highlighted page, sliding in as the other slides aside — so a tap of ⌥Tab flips to the page you were on before. A row of pips in the footer shows the open pages; the ⌘K command bar lists them by name. The stack is kept between launches. Settings → Library → Keep pages open, off, gives one document at a time.

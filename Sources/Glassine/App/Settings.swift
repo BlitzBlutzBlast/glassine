@@ -88,6 +88,8 @@ struct SettingsData: Codable, Equatable {
     /// of the last one.
     var openPages: [String] = []
     var keepPagesOpen: Bool = true
+    /// The tour has been through once (TourView); a first launch shows it.
+    var tourSeen: Bool = false
 
     // Typography
     var fontFamily: String = "Helvetica Neue"
@@ -201,6 +203,7 @@ struct SettingsData: Codable, Equatable {
         p.libraryBookmark = nil
         p.lastOpenedDocument = nil
         p.openPages = []
+        p.tourSeen = false
         p.expandedFolders = []
         p.starred = []
         p.documentOrder = [:]
@@ -225,6 +228,7 @@ struct SettingsData: Codable, Equatable {
         p.libraryBookmark = other.libraryBookmark
         p.lastOpenedDocument = other.lastOpenedDocument
         p.openPages = other.openPages
+        p.tourSeen = other.tourSeen
         p.expandedFolders = other.expandedFolders
         p.starred = other.starred
         p.documentOrder = other.documentOrder
@@ -259,6 +263,7 @@ struct SettingsData: Codable, Equatable {
         lastOpenedDocument = try c.decodeIfPresent(String.self, forKey: .lastOpenedDocument) ?? d.lastOpenedDocument
         openPages = try c.decodeIfPresent([String].self, forKey: .openPages) ?? d.openPages
         keepPagesOpen = try c.decodeIfPresent(Bool.self, forKey: .keepPagesOpen) ?? d.keepPagesOpen
+        tourSeen = try c.decodeIfPresent(Bool.self, forKey: .tourSeen) ?? d.tourSeen
         fontFamily = try c.decodeIfPresent(String.self, forKey: .fontFamily) ?? d.fontFamily
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? d.fontSize
         lineHeight = try c.decodeIfPresent(Double.self, forKey: .lineHeight) ?? d.lineHeight

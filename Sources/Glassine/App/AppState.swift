@@ -129,6 +129,8 @@ final class AppState: ObservableObject {
     @Published var showingShortcuts = false
     /// Settings as an overlay on the main window, so it can never get lost behind it.
     @Published var showingSettings = false
+    /// The tour (TourView): a first launch, or Help → Tour of Glassine.
+    @Published var showingTour = false
     /// Which settings section is up — an index into SettingsOverlay.Pane —
     /// kept here so Settings reopens where it was left; Tab and ⇧Tab walk it.
     @Published var settingsTab = 0
@@ -240,6 +242,7 @@ final class AppState: ObservableObject {
         case "daily": showDaily()
         case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.backdrop.index
         case "trash": trashCurrentDocument()   // the "Move to the Trash?" sheet, for a picture of it
+        case "tour": showingTour = true
         case "carousel":
             // Every document in the library open as a page, and the pages fanned out.
             for ref in library.allDocuments.reversed() { open(ref) }
@@ -250,6 +253,12 @@ final class AppState: ObservableObject {
             settingsTab = (SettingsOverlay.Pane(rawValue: name) ?? .type).index
             if let q = UserDefaults.standard.string(forKey: "glassine.settingsQuery") { settingsQuery = q }
         default: break
+        }
+        // A copy that has never been through the tour starts with it, once the
+        // window is up — not the demonstration copy, and not a check shot.
+        if !settings.data.tourSeen, !Distribution.isDemo, !ScreenshotMode.isActive,
+           UserDefaults.standard.string(forKey: "glassine.launchView") == nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in self?.showingTour = true }
         }
     }
 

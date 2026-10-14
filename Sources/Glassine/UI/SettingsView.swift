@@ -1567,6 +1567,13 @@ struct AboutSection: View {
                     }
                     .buttonStyle(GlassButtonStyle(theme: theme))
                 }
+                SettingRow(theme: theme, title: "The tour", caption: "The first launch's walk through the app and its choices.", keywords: "tour onboarding welcome introduction") {
+                    Button("Show") {
+                        state.showingSettings = false
+                        state.showingTour = true
+                    }
+                    .buttonStyle(GlassButtonStyle(theme: theme))
+                }
             }
 
             SettingsPanel(theme: theme, title: "Settings") {
