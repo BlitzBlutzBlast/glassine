@@ -49,6 +49,13 @@ final class GlassineTextView: NSTextView {
     private var caretVisible = false
     private var lastCaretRect: CGRect = .zero
     private var isUpdatingCaret = false
+    /// Set while updateInsets() measures or reflows. Measuring a line lays the
+    /// text out, and the layout manager grows the view to fit as it goes, which
+    /// comes back through setFrameSize — once per stretch of layout. Without
+    /// the guard each of those calls measured again, laying out the rest of the
+    /// document from inside the measurement before it: a long page took
+    /// seconds to come up.
+    private var isUpdatingInsets = false
     private var blinkWork: DispatchWorkItem?
     private var suppressAnimationOnce = false
 
@@ -321,6 +328,9 @@ final class GlassineTextView: NSTextView {
     // MARK: - Layout: centered column + insets
 
     func updateInsets() {
+        guard !isUpdatingInsets else { return }
+        isUpdatingInsets = true
+        defer { isUpdatingInsets = false }
         // The view is exactly as wide as the clip view. Autoresizing only adds
         // the clip's change in width to whatever width the view began with, so a
         // scroll view that starts at zero size — as SwiftUI's hosting makes it —
