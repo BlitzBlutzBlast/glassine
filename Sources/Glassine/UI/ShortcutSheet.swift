@@ -21,6 +21,8 @@ struct ShortcutSheet: View {
             ("⌘R", "Rename"),
             ("⌘⇧⌫", "Shelve — out of the way, not gone"),
             ("⌘⌫", "Move to Trash"),
+            ("⌥⇥", "Switch pages — hold ⌥, Tab steps"),
+            ("⌘W", "Close the page"),
             ("⌘Z", "Undo — files too"),
             ("⌘⇧E", "Export as PDF"),
         ]),

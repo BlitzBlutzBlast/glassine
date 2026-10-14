@@ -52,6 +52,7 @@
         "group": "Library",
         "pages": [
           "library/all-documents",
+          "library/pages",
           "library/sidebar",
           "library/search",
           "library/shelf",

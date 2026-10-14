@@ -24,6 +24,10 @@ struct EditorContainerView: View {
                     HStack(spacing: 0) {
                         editor(doc)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // Another page coming in slides this one aside (Pages.swift).
+                            .transition(state.pageSlide == 0 ? .opacity : .asymmetric(
+                                insertion: .move(edge: state.pageSlide > 0 ? .trailing : .leading).combined(with: .opacity),
+                                removal: .move(edge: state.pageSlide > 0 ? .leading : .trailing).combined(with: .opacity)))
                         if beside {
                             // The page beside the editor: rendered as the text changes,
                             // scrolled to the caret's block, sized by the divider.
@@ -38,11 +42,15 @@ struct EditorContainerView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // While the pages are fanned out the one on screen steps back.
+        .scaleEffect(state.carousel == nil ? 1 : 0.965)
+        .opacity(state.carousel == nil ? 1 : 0.4)
+        .animation(.easeOut(duration: 0.2), value: state.carousel == nil)
         .animation(.easeOut(duration: 0.24), value: state.showingGallery)
         .animation(.easeOut(duration: 0.24), value: state.showingDaily)
         .animation(.easeOut(duration: 0.18), value: state.reviewMode)
         .animation(.easeOut(duration: 0.22), value: beside)
-        .animation(.easeOut(duration: 0.18), value: state.document?.relativePath)
+        .animation(state.pageSlide == 0 ? .easeOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.86), value: state.document?.relativePath)
         .animation(.easeOut(duration: 0.3), value: state.zoomingCard)
     }
 
@@ -140,6 +148,8 @@ struct FooterBar: View {
                 Text(document.title)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                PagePips()
+                    .modifier(Nudge(trigger: state.carouselNudge))
             }
             Spacer()
             Button {
@@ -269,5 +279,24 @@ struct EmptyLibraryView: View {
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
+/// A small sideways shake, for a key that found nothing to do.
+struct Nudge: ViewModifier {
+    let trigger: Int
+    @State private var offset: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .onChange(of: trigger) { _, _ in
+                guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.07)) { offset = 4 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) { withAnimation(.easeInOut(duration: 0.07)) { offset = -3 } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { withAnimation(.easeInOut(duration: 0.07)) { offset = 2 } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.21) { withAnimation(.easeInOut(duration: 0.08)) { offset = 0 } }
+            }
     }
 }

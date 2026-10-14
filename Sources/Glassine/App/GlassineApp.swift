@@ -267,6 +267,10 @@ struct GlassineCommands: Commands {
             Button("Today's Note") { withWindow { state.openTodaysNote() } }
                 .keyboardShortcut("d", modifiers: .command)
             Divider()
+            Button("Close Page") { state.closeCurrentPage() }
+                .keyboardShortcut("w", modifiers: .command)
+                .disabled(state.document == nil || state.galleryOnScreen)
+            Divider()
             Button("Save Now") { state.document?.save() }
                 .disabled(state.document == nil)
             Button("Rename…") {
@@ -358,6 +362,9 @@ struct GlassineCommands: Commands {
                 .keyboardShortcut("k", modifiers: .command)
             Button("Timelapse") { withWindow { state.showDaily() } }
                 .keyboardShortcut("2", modifiers: .command)
+            Button("Previous Page") { withWindow { state.switchToPreviousPage() } }
+                .keyboardShortcut(.tab, modifiers: .option)
+                .disabled(state.openPages.count < 2 || !state.keepsPagesOpen)
             Button(state.reviewMode && !state.showingGallery ? "Leave Review" : "Review") { state.toggleReview() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(state.document == nil)

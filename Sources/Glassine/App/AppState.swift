@@ -19,6 +19,14 @@ final class AppState: ObservableObject {
     @Published var tagFilter: String?
     @Published var searchText: String = ""
     @Published var pendingPrompt: Prompt?
+    /// The open pages fanned across the window while ⌥ is held (Pages.swift).
+    @Published var carousel: PageCarousel?
+    /// Which way the page slides as another comes in: 1 from the right, -1
+    /// from the left, 0 for the plain crossfade. Cleared once it has.
+    @Published var pageSlide: Int = 0
+    /// Bumped when ⌥Tab finds only one page open, for a nudge of the pips.
+    @Published var carouselNudge = 0
+    var pageKeyMonitor: Any?
     @Published var errorMessage: String?
     /// The Craft-style mosaic of every document. Also shown whenever nothing is open.
     @Published var showingGallery: Bool = false
@@ -159,6 +167,7 @@ final class AppState: ObservableObject {
 
         bootstrapLibrary()
         startPolling()
+        installPageKeys()
 
         // Sync leaves the document being edited alone until it is saved, and
         // tells the app when it has changed the library underneath it.
@@ -213,7 +222,10 @@ final class AppState: ObservableObject {
         // file for previews, tags and search happens right after, off the main thread.
         library.scanNow(readingContents: false)
         library.rescan()
+        prunePages()
         if let last = settings.data.lastOpenedDocument, let ref = library.document(withID: last) {
+            open(ref)
+        } else if let first = settings.data.openPages.first, let ref = library.document(withID: first) {
             open(ref)
         } else {
             showingGallery = true
@@ -228,6 +240,10 @@ final class AppState: ObservableObject {
         case "daily": showDaily()
         case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.backdrop.index
         case "trash": trashCurrentDocument()   // the "Move to the Trash?" sheet, for a picture of it
+        case "carousel":
+            // Every document in the library open as a page, and the pages fanned out.
+            for ref in library.allDocuments.reversed() { open(ref) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.stepCarousel(backward: false) }
         case let view? where view.hasPrefix("settings"):
             showingSettings = true
             let name = view.split(separator: ":").dropFirst().first.map(String.init) ?? ""
@@ -500,6 +516,10 @@ final class AppState: ObservableObject {
         selectedFolder = ref.folder
         settings.touchRecent(ref.id)
         settings.data.lastOpenedDocument = ref.id
+        notePageOpened(ref.id)
+        if pageSlide != 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.pageSlide = 0 }
+        }
     }
 
     /// The document showing, when it is a file from outside the library.
@@ -583,6 +603,13 @@ final class AppState: ObservableObject {
         document = nil
     }
 
+    /// The document on screen put away without another coming up (⌘W on a
+    /// file from elsewhere, or on the last page).
+    func closeLooseDocument() {
+        closeCurrentDocument()
+        selection = nil
+    }
+
     func caretMoved(to position: Int) {
         guard let doc = document, !doc.isLoose else { return }
         settings.data.caretPositions[doc.relativePath] = position
@@ -659,7 +686,11 @@ final class AppState: ObservableObject {
             let trashedURL = try library.trash(rel)
             settings.forgetPath(rel)
             if selectedFolder == rel || selectedFolder.hasPrefix(rel + "/") { selectedFolder = "" }
-            if wasOpen, let next = recentDocuments.first { open(next) }
+            if wasOpen {
+                // The page under the one that went, or the last document used.
+                if let page = settings.data.openPages.first(where: { $0 != rel && !$0.hasPrefix(rel + "/") }), let ref = library.document(withID: page) { open(ref) }
+                else if let next = recentDocuments.first { open(next) }
+            }
             if let trashedURL {
                 libraryUndo.registerUndo(withTarget: self) { s in
                     s.undoableRestore(from: trashedURL, to: box, label: label, reopen: wasOpen)
@@ -1234,6 +1265,18 @@ final class AppState: ObservableObject {
             add("copy-rtf", "Copy as Rich Text", keys: "⌥⌘C") { [weak self] in self?.copyCurrentDocument(asMarkdown: false) }
             add("export-pdf", "Export as PDF…", keys: "⌘⇧E") { [weak self] in self?.exportPDF() }
             add("shelve", currentDocumentIsShelved ? "Unshelve" : "Shelve", keys: "⌘⇧⌫") { [weak self] in self?.toggleShelvedCurrentDocument() }
+            if keepsPagesOpen {
+                add("close-page", "Close page", keys: "⌘W") { [weak self] in self?.closeCurrentPage() }
+                if openPages.count > 1 {
+                    add("previous-page", "Previous page", keys: "⌥⇥") { [weak self] in self?.switchToPreviousPage() }
+                }
+                // Every open page by name, for a jump without the carousel.
+                for id in openPages where id != document?.relativePath {
+                    if let ref = library.document(withID: id) {
+                        add("page-\(id)", "Page: \(ref.title)") { [weak self] in self?.switchToPage(id) }
+                    }
+                }
+            }
             add("search", "Search", keys: "⌘F") { [weak self] in self?.focusSearch() }
         }
 

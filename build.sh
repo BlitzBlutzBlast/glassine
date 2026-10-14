@@ -172,6 +172,8 @@ if [[ $INSTALL -eq 1 ]]; then
   APP="/Applications/$BUNDLE_NAME.app"
 fi
 
-if [[ $RUN -eq 1 ]]; then
+# GLASSINE_NO_OPEN=1 builds and installs without bringing the app up — for
+# scripts that will launch their own copy with arguments.
+if [[ $RUN -eq 1 && -z "${GLASSINE_NO_OPEN:-}" ]]; then
   open "$APP"
 fi

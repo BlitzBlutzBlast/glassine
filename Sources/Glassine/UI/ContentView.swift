@@ -35,6 +35,12 @@ struct ContentView: View {
                     .animation(.easeOut(duration: state.isQuiet ? 0.7 : 0.15), value: state.isQuiet)
             }
 
+            if let carousel = state.carousel {
+                PageCarouselView(carousel: carousel)
+                    .transition(.opacity.combined(with: .scale(scale: 1.03)))
+                    .zIndex(8)
+            }
+
             if state.showingSearch {
                 SearchOverlay()
                     .id(state.searchSession)
@@ -63,6 +69,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.16), value: state.showingSettings)
         .animation(.easeOut(duration: 0.14), value: state.showingSearch)
         .animation(.easeOut(duration: 0.16), value: state.showingCommandBar)
+        .animation(.easeOut(duration: 0.18), value: state.carousel == nil)
         .coordinateSpace(name: "glassineRoot")
         .frame(minWidth: 620, minHeight: 400)
         .background(WindowConfigurator(theme: theme, floats: state.settings.data.floatOnTop))

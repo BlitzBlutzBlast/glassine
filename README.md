@@ -129,6 +129,8 @@ New documents start as "Untitled" and take their file name from the first line a
 | ⌘R | Rename |
 | ⌘⇧⌫ | Shelve — out of the sidebar, Recents and All Documents, into the Shelf section at the bottom; Unshelve puts it back where it was |
 | ⌘⌫ | Move to Trash (asks first; it goes to the macOS Trash, so it's recoverable) |
+| ⌥⇥ / ⌥⇧⇥ | Open pages fanned out across the window: hold ⌥, Tab steps, ⇧Tab back, ⌫ closes one, Esc leaves them; let go of ⌥ to open. A tap flips to the page before |
+| ⌘W | Close the page; the one under it comes up |
 | — | Check a task (click its box in the editor or in Review) and, a moment later, it sinks below the last unfinished item in its list, nested items in tow; uncheck it and it rises back to where it was. Settings → Typing turns that off |
 | — | Drag a task box or a list bullet or number up or down to reorder the list, nested items in tow |
 | ⌘Z ⇧⌘Z | Undo and redo — typing first, then file operations: a new document, a rename, a move, a duplicate, a trash |
@@ -164,6 +166,10 @@ The mosaic view (⌘P, the grid row at the top of the sidebar, Esc from the edit
 ## Copying a document
 
 ⌘⇧C copies the whole document as Markdown; ⌥⌘C copies it as rich text (RTF and HTML go on the clipboard, so Mail, Notes, Slack and Google Docs keep headings, bold, lists and links). The copy button at the bottom-right of the editor does Markdown on click, with rich text one click-and-hold away, and both are in the right-click menus in the sidebar and All Documents.
+
+## Open pages
+
+A document stays open as a page until you close it (⌘W), and the pages sit in a stack with the one you are writing on top — no row of tabs. Hold ⌥ and press Tab: the page steps back and the open pages fan out across it as cards, each the page in little, in the order they were last used, the page before this one already highlighted. Tab steps, ⇧Tab steps back, ⌫ closes one, Esc leaves things, and letting go of ⌥ opens the highlighted page, sliding in as the other slides aside — so a tap of ⌥Tab flips to the page you were on before. A row of pips in the footer shows the open pages; the ⌘K command bar lists them by name. The stack is kept between launches. Settings → Library → Keep pages open, off, gives one document at a time.
 
 ## Tables
 

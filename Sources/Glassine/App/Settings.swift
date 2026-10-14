@@ -83,6 +83,11 @@ struct SettingsData: Codable, Equatable {
     var nameFilesFromFirstLine: Bool = true
     var sortDocumentsBy: SortMode = .modified
     var lastOpenedDocument: String? = nil
+    /// The documents open as pages, the one on top first (Pages.swift), and
+    /// whether a document opened stays open until closed, or takes the place
+    /// of the last one.
+    var openPages: [String] = []
+    var keepPagesOpen: Bool = true
 
     // Typography
     var fontFamily: String = "Helvetica Neue"
@@ -195,6 +200,7 @@ struct SettingsData: Codable, Equatable {
         p.libraryPath = nil
         p.libraryBookmark = nil
         p.lastOpenedDocument = nil
+        p.openPages = []
         p.expandedFolders = []
         p.starred = []
         p.documentOrder = [:]
@@ -218,6 +224,7 @@ struct SettingsData: Codable, Equatable {
         p.libraryPath = other.libraryPath
         p.libraryBookmark = other.libraryBookmark
         p.lastOpenedDocument = other.lastOpenedDocument
+        p.openPages = other.openPages
         p.expandedFolders = other.expandedFolders
         p.starred = other.starred
         p.documentOrder = other.documentOrder
@@ -250,6 +257,8 @@ struct SettingsData: Codable, Equatable {
         nameFilesFromFirstLine = try c.decodeIfPresent(Bool.self, forKey: .nameFilesFromFirstLine) ?? d.nameFilesFromFirstLine
         sortDocumentsBy = try c.decodeIfPresent(SortMode.self, forKey: .sortDocumentsBy) ?? d.sortDocumentsBy
         lastOpenedDocument = try c.decodeIfPresent(String.self, forKey: .lastOpenedDocument) ?? d.lastOpenedDocument
+        openPages = try c.decodeIfPresent([String].self, forKey: .openPages) ?? d.openPages
+        keepPagesOpen = try c.decodeIfPresent(Bool.self, forKey: .keepPagesOpen) ?? d.keepPagesOpen
         fontFamily = try c.decodeIfPresent(String.self, forKey: .fontFamily) ?? d.fontFamily
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? d.fontSize
         lineHeight = try c.decodeIfPresent(Double.self, forKey: .lineHeight) ?? d.lineHeight
@@ -387,6 +396,7 @@ final class AppSettings: ObservableObject {
         // Folder renames: fix children too.
         let oldPrefix = old + "/"
         let newPrefix = new + "/"
+        data.openPages = data.openPages.map { $0 == old ? new : ($0.hasPrefix(oldPrefix) ? newPrefix + $0.dropFirst(oldPrefix.count) : $0) }
         for (k, v) in data.recents where k.hasPrefix(oldPrefix) {
             data.recents.removeValue(forKey: k)
             data.recents[newPrefix + k.dropFirst(oldPrefix.count)] = v
@@ -410,6 +420,7 @@ final class AppSettings: ObservableObject {
         data.starred.removeAll { $0 == relPath || $0.hasPrefix(relPath + "/") }
         data.caretPositions.removeValue(forKey: relPath)
         if data.lastOpenedDocument == relPath { data.lastOpenedDocument = nil }
+        data.openPages.removeAll { $0 == relPath || $0.hasPrefix(relPath + "/") }
         for (folder, list) in data.documentOrder {
             if folder == relPath || folder.hasPrefix(relPath + "/") {
                 data.documentOrder.removeValue(forKey: folder)
