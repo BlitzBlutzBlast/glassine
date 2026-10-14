@@ -97,8 +97,9 @@ extension AppState {
 
     // MARK: - The carousel
 
-    /// ⌥Tab: the carousel comes up with the page before this one under the
-    /// highlight; each Tab while ⌥ is held steps along, ⇧Tab steps back.
+    /// ⌥Tab or ⌃Tab: the carousel comes up with the page before this one under
+    /// the highlight; each Tab while the modifier is held steps along, ⇧Tab
+    /// steps back.
     func stepCarousel(backward: Bool) {
         if var c = carousel {
             guard !c.order.isEmpty else { return }
@@ -116,7 +117,7 @@ extension AppState {
         carousel = PageCarousel(order: order, index: backward ? order.count - 1 : 1)
     }
 
-    /// ⌥ let go: the highlighted page opens.
+    /// The modifier let go: the highlighted page opens.
     func commitCarousel() {
         guard let c = carousel else { return }
         carousel = nil
@@ -152,24 +153,30 @@ extension AppState {
         switchToPage(id)
     }
 
-    /// The keys: ⌥Tab and ⌥⇧Tab anywhere in the app; ⌫ and Esc while the
-    /// carousel is up; ⌥ let go opens the page. A local monitor, so the
-    /// editor never sees the Tab.
+    /// The keys: ⌥Tab or ⌃Tab anywhere in the app (⇧ for backwards); ⌫ and
+    /// Esc while the carousel is up; the modifier let go opens the page. A
+    /// local monitor, so the editor never sees the Tab.
     func installPageKeys() {
         pageKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
             if event.type == .flagsChanged {
-                if self.carousel != nil, !event.modifierFlags.contains(.option) {
+                // Whichever modifier brought the carousel up, letting it go commits.
+                if self.carousel != nil, let held = self.carouselModifier, !event.modifierFlags.contains(held) {
                     self.commitCarousel()
                 }
                 return event
             }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            // Tab with ⌥ (and ⇧, for backwards), nothing else.
-            if event.keyCode == 48, flags.contains(.option), !flags.contains(.command), !flags.contains(.control) {
-                guard self.keepsPagesOpen, self.pendingPrompt == nil else { return event }
-                self.stepCarousel(backward: flags.contains(.shift))
-                return nil
+            // Tab with ⌥ or ⌃ (and ⇧, for backwards), nothing else.
+            if event.keyCode == 48, !flags.contains(.command) {
+                let held: NSEvent.ModifierFlags? = flags.contains(.option) && !flags.contains(.control) ? .option
+                    : flags.contains(.control) && !flags.contains(.option) ? .control : nil
+                if let held {
+                    guard self.keepsPagesOpen, self.pendingPrompt == nil else { return event }
+                    if self.carousel == nil { self.carouselModifier = held }
+                    self.stepCarousel(backward: flags.contains(.shift))
+                    return nil
+                }
             }
             if self.carousel != nil {
                 switch event.keyCode {

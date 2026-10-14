@@ -133,7 +133,7 @@ struct PagePips: View {
                         .contentShape(Rectangle().inset(by: -4))
                         .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
                         .onTapGesture { state.switchToPage(id) }
-                        .help((state.library.document(withID: id)?.title ?? id) + " — ⌥Tab moves between pages")
+                        .help((state.library.document(withID: id)?.title ?? id) + " — ⌥Tab or ⌃Tab moves between pages")
                 }
                 if pages.count > 9 {
                     Text("+\(pages.count - 9)")

@@ -318,7 +318,7 @@ struct TourView: View {
 
     private var pages: some View {
         VStack(alignment: .leading, spacing: 0) {
-            heading("Pages, and the keys", "A document you open stays open as a page, in a stack with the one you're writing on top. No tabs: hold ⌥ and press Tab and the pages fan out across the window; let go to open one.")
+            heading("Pages, and the keys", "A document you open stays open as a page, in a stack with the one you're writing on top. No tabs: hold ⌥ (or ⌃) and press Tab and the pages fan out across the window; let go to open one.")
                 .settle(0)
             row("Keep pages open", "Off, a document opened takes the place of the last — one page at a time.") {
                 GlassToggle(theme: theme, isOn: form.binding(\.keepPagesOpen))
@@ -331,7 +331,7 @@ struct TourView: View {
                 .settle(2)
             HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: 7) {
-                    key("⌥⇥", "The open pages, fanned out")
+                    key("⌥⇥ / ⌃⇥", "The open pages, fanned out")
                     key("⌘1", "All Documents — the whole library as cards")
                     key("⌘2", "Timelapse — your daily notes, day by day")
                     key("⌘↩", "Review — the finished page, in six styles")

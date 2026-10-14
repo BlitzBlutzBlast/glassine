@@ -74,7 +74,7 @@ struct SettingsOverlay: View {
         var keywords: String {
             switch self {
             case .library:
-                return "library location folder icloud drive dropbox obsidian vault reveal finder change files name first line untitled sort documents last edited date created autosave saving sync github repository token sign in work mac second mac history pages tabs open keep switch option tab carousel close one at a time"
+                return "library location folder icloud drive dropbox obsidian vault reveal finder change files name first line untitled sort documents last edited date created autosave saving sync github repository token sign in work mac second mac history pages tabs open keep switch option control tab carousel close one at a time"
             case .type:
                 return "type font face family size points line height paragraph spacing indent letter spacing tracking larger headings center headings markdown hide syntax markers page column width top margin layout"
             case .caret:
@@ -552,8 +552,8 @@ struct LibrarySection: View {
 
             SettingsPanel(theme: theme, title: "Pages") {
                 form.toggle("Keep pages open", \.keepPagesOpen,
-                            caption: "A document stays open as a page until you close it (⌘W). Hold ⌥ and press Tab to fan the open pages out and step between them; let go to open one. Off, a document opened takes the place of the last.",
-                            keywords: "tabs open pages switch option tab carousel close one at a time")
+                            caption: "A document stays open as a page until you close it (⌘W). Hold ⌥ (or ⌃) and press Tab to fan the open pages out and step between them; let go to open one. Off, a document opened takes the place of the last.",
+                            keywords: "tabs open pages switch option control tab carousel close one at a time")
             }
 
             SettingsPanel(theme: theme, title: "Files") {

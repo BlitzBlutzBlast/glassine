@@ -19,14 +19,16 @@ final class AppState: ObservableObject {
     @Published var tagFilter: String?
     @Published var searchText: String = ""
     @Published var pendingPrompt: Prompt?
-    /// The open pages fanned across the window while ⌥ is held (Pages.swift).
+    /// The open pages fanned across the window while ⌥ or ⌃ is held (Pages.swift).
     @Published var carousel: PageCarousel?
     /// Which way the page slides as another comes in: 1 from the right, -1
     /// from the left, 0 for the plain crossfade. Cleared once it has.
     @Published var pageSlide: Int = 0
-    /// Bumped when ⌥Tab finds only one page open, for a nudge of the pips.
+    /// Bumped when ⌥Tab or ⌃Tab finds only one page open, for a nudge of the pips.
     @Published var carouselNudge = 0
     var pageKeyMonitor: Any?
+    /// The modifier (⌥ or ⌃) that brought the carousel up; letting it go commits.
+    var carouselModifier: NSEvent.ModifierFlags?
     @Published var errorMessage: String?
     /// The Craft-style mosaic of every document. Also shown whenever nothing is open.
     @Published var showingGallery: Bool = false
