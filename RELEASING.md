@@ -97,3 +97,12 @@ To try the sandboxed flavor without any of the signing: `./build.sh --appstore -
 - The direct download and the store build store documents in different places (`iCloud Drive/Glassine` vs the app's own iCloud folder). They can be pointed at the same folder through Settings → Library, but do not run both at once against it.
 - Both builds bump the same `CFBundleVersion`; App Store Connect only insists it goes up.
 - Reviewers get a sandboxed Mac with iCloud possibly off. The local Documents fallback covers that; the welcome document appears there.
+
+## Working over the bridge
+
+When the source is edited from a Claude session through the desktop bridge rather than on the Mac itself, two things to know:
+
+- A file written over the bridge can land with an older modification time than the last build, and `swift build` will then skip it and install the previous binary without a word. `touch` the files that changed before building, or check that the built binary is newer than the newest source.
+- A check shot (`tests/shot-*.sh`) runs `build/Glassine.app` under the real app's bundle identifier. Its *settings* come from the launch arguments and are never written back, and since October 16 the theme, backdrop and look stores stay quiet in screenshot mode too; before that, a shot could rewrite the real custom themes and backdrops. Two shots overlapping on one temp library make NSFileCoordinator wait ten seconds or more on every open — run them one at a time, and `pkill -f build/Glassine.app` first.
+
+The update feed is served by `site/api/appcast.js` (a rewrite from `/appcast.xml`), which counts each check as a Web Analytics event; the file itself is `site/feed/appcast.xml`. After any change to the function, fetch `https://glassine.ink/appcast.xml` with Sparkle's User-Agent and compare it with the file — a broken function is a broken update for every copy.
