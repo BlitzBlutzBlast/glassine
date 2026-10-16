@@ -2,7 +2,7 @@
 
 Glassine collects nothing.
 
-There are no accounts, no analytics, no crash reporting, no advertising, and no
+There are no accounts, no analytics in the app, no crash reporting, no advertising, and no
 servers of ours. What you write stays on your Mac, in plain Markdown files you
 can see in Finder.
 
@@ -35,8 +35,11 @@ The version downloaded outside the App Store updates itself with Sparkle, an
 open-source framework. Once a day it fetches a small file, the update feed,
 from glassine.ink. That request carries the version of Glassine you are
 running and, like any web request, your IP address; Sparkle's option to send
-a profile of your Mac is off, and Glassine has no server that would keep
-anything about the request. When a newer version exists, the disk image is
+a profile of your Mac is off. glassine.ink counts those checks — how many a
+day, and which version — through Vercel's Web Analytics, which sets no cookie
+and keeps no IP address (it tells visitors apart by a hash that changes
+every day), so that the number of copies in use is known; nothing else about
+the request is kept. When a newer version exists, the disk image is
 downloaded from GitHub, whose privacy statement covers that download:
 https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement
 

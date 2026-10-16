@@ -1,6 +1,12 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/appcast.xml", "destination": "/api/appcast" }
+  ],
+  "functions": {
+    "api/appcast.js": { "includeFiles": "feed/appcast.xml" }
+  },
   "redirects": [
     { "source": "/(.*)", "has": [{ "type": "host", "value": "glassinewriter.com" }], "destination": "https://glassine.ink/$1", "permanent": true },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "www.glassinewriter.com" }], "destination": "https://glassine.ink/$1", "permanent": true },

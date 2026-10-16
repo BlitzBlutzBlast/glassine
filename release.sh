@@ -142,8 +142,9 @@ fi
 # --- The feed Sparkle reads ------------------------------------------------------------------
 # One entry, this release: the disk image on GitHub, signed with the key in
 # this Mac's keychain, and a note that points at the changelog. Vercel serves
-# it at $FEED_URL once the commit lands; running copies see it within a day.
-echo "▸ Writing site/appcast.xml"
+# it at $FEED_URL once the commit lands — through site/api/appcast.js, which
+# counts the checks — and running copies see it within a day.
+echo "▸ Writing site/feed/appcast.xml"
 FEED_DIR="$(mktemp -d)"
 cp "$DMG" "$FEED_DIR/"
 cat > "$FEED_DIR/$APP_NAME-$VERSION.html" <<EOF
@@ -152,9 +153,9 @@ cat > "$FEED_DIR/$APP_NAME-$VERSION.html" <<EOF
 EOF
 "$SPARKLE_BIN/generate_appcast" --embed-release-notes --link "https://glassine.ink" \
   --download-url-prefix "https://github.com/a-libre/glassine/releases/download/v$VERSION/" \
-  -o site/appcast.xml "$FEED_DIR"
+  -o site/feed/appcast.xml "$FEED_DIR"
 rm -rf "$FEED_DIR"
-git add site/appcast.xml
+git add site/feed/appcast.xml
 git commit -q -m "Appcast: $VERSION"
 git push -q origin main
 echo "▸ Feed committed and pushed"
