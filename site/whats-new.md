@@ -6,6 +6,10 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
+## 0.2.28 — October 16, 2026
+
+- **Lighter under motion.** The window no longer works out, on every frame of every animation, where it could be dragged by; a drag on the glass simply moves it. Less of the main thread spent on bookkeeping while the page zooms or the days walk.
+
 ## 0.2.27 — October 16, 2026
 
 - **One setting for how it looks.** Settings → Look is the whole of it now: eight looks as tiles, and under them the makings of the one on screen — the page's colours and glass, and the folds (or the desktop) behind it. Duplicate a built-in look and change anything; a look of yours is edited in place. [Looks.](https://docs.glassine.ink/appearance/looks)

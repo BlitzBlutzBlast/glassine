@@ -94,6 +94,28 @@ struct GlassBackdrop: View {
     }
 }
 
+/// The window, dragged by its glass. On macOS 15 and later a drag that no
+/// control, row, card or page claimed moves the window, through SwiftUI's
+/// own window-drag gesture at the root of the content; on macOS 14 AppKit
+/// does it the old way (`isMovableByWindowBackground`), which has the window
+/// work out in advance, and again on every change of layout, which parts of
+/// its content are *not* draggable — a walk of the whole SwiftUI tree, on
+/// every frame of every animation (a tenth of the main thread in a sample).
+/// Asking at the drag costs nothing.
+struct DragsWindowByGlass: ViewModifier {
+    static var usesGesture: Bool {
+        if #available(macOS 15, *) { return true } else { return false }
+    }
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.gesture(WindowDragGesture())
+        } else {
+            content
+        }
+    }
+}
+
 /// Configures the hosting NSWindow for the transparent, title-less look.
 struct WindowConfigurator: NSViewRepresentable {
     let theme: Theme
@@ -131,7 +153,8 @@ struct WindowConfigurator: NSViewRepresentable {
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
                 window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = true
+                // See DragsWindowByGlass: the gesture where there is one.
+                window.isMovableByWindowBackground = !DragsWindowByGlass.usesGesture
                 window.titlebarSeparatorStyle = .none
                 window.toolbarStyle = .unifiedCompact
                 // Naming the frame restores the saved one at once, but SwiftUI then sizes
@@ -157,15 +180,22 @@ struct WindowConfigurator: NSViewRepresentable {
                 window.tabbingMode = .disallowed
                 window.acceptsMouseMovedEvents = true
             }
+            // SwiftUI calls this on every pass of the content view's body, so
+            // nothing below touches the window unless it is about to change:
+            // setting the same colour again, or asking for the shadow again,
+            // has AppKit recompute the window's structural regions — the
+            // shadow, the opaque region, where the glass can be dragged by —
+            // on the next display cycle, a walk of the whole view tree.
+            var changed = false
             // Keep the window opaque: behind-window blur still works (Finder's sidebar is the
             // same trick), and a non-opaque window would let clicks fall through to the desktop
             // wherever the backing store is transparent.
-            if !window.isOpaque { window.isOpaque = true }
+            if !window.isOpaque { window.isOpaque = true; changed = true }
             // Floating: above other apps' windows, and — the part that matters with
             // Stage Manager on — allowed to stay on screen beside another app's set
             // instead of being swept off with the rest of Glassine.
             let level: NSWindow.Level = floats ? .floating : .normal
-            if window.level != level { window.level = level }
+            if window.level != level { window.level = level; changed = true }
             if floats != window.collectionBehavior.contains(.canJoinAllApplications) {
                 if floats {
                     window.collectionBehavior.remove(.primary)
@@ -173,11 +203,13 @@ struct WindowConfigurator: NSViewRepresentable {
                 } else {
                     window.collectionBehavior.remove(.canJoinAllApplications)
                 }
+                changed = true
             }
-            window.backgroundColor = theme.tint.nsColor
+            let tint = theme.tint.nsColor
+            if window.backgroundColor != tint { window.backgroundColor = tint; changed = true }
             let appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
-            if window.appearance != appearance { window.appearance = appearance }
-            window.invalidateShadow()
+            if window.appearance != appearance { window.appearance = appearance; changed = true }
+            if changed { window.invalidateShadow() }
         }
     }
 }

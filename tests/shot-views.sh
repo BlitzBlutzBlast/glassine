@@ -55,6 +55,10 @@ case "${1:-all}" in
   carouselclick) DELAY=4 shoot views-carousel-click -glassine.shootScript "1.0:step:fwd;1.6:click:640,400" ;;
   # The main thread held for three seconds on purpose: the watchdog should leave a report in ~/Library/Logs/Glassine and a line in log.txt.
   stall) DELAY=6 shoot views-stall -glassine.shootScript "1.0:stall:3;4.6:gallery" ;;
+  # Six seconds of typing at a typist's pace, for a sample of the main thread: ./tests/shot-views.sh typing & sleep 3; sample Glassine 6
+  typing) DELAY=11 shoot views-typing -glassine.shootScript "1.0:type@40:The shorter the sentence, the more it has to carry. A paragraph that says one thing says it twice as loud, and the reader hears it the first time. Start at the end; the last line was the first one you meant." ;;
+  # Six seconds of zooming out to the wall and back in, for a sample of the main thread under animation.
+  motion) DELAY=11 shoot views-motion -glassine.shootScript "1.0:type@40:A few words first, so the page has something to zoom.;3.0:gallery;4.2:open:Untitled.md;5.4:gallery;6.6:open:Untitled.md;7.8:gallery;9.0:open:Untitled.md" ;;
   # A page switched away from with unsaved text: the save and the first-line rename land off the main thread.
   switch) DELAY=6 shoot views-switch -glassine.shootScript "0.8:select:2,15;1.0:type@0:Renamed by its first line;1.8:open:Garden.md;3.4:gallery"; ls "$LIB" ;;
   all) "$0" timelapse; "$0" everything; "$0" day; "$0" carousel; "$0" look; "$0" tour 2; "$0" tour 10 ;;
