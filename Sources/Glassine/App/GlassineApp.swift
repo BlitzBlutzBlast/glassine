@@ -413,20 +413,6 @@ struct GlassineCommands: Commands {
                 ForEach(state.looks.all) { l in Text(l.name).tag(l.id) }
                 if state.currentLook == nil { Text(state.suggestedLookName).tag("") }
             }
-            Picker("Theme", selection: Binding(
-                get: { state.theme.id },
-                set: { state.chooseTheme($0) }
-            )) {
-                ForEach(state.themes.all) { t in
-                    Text(t.name).tag(t.id)
-                }
-            }
-            Picker("Backdrop", selection: Binding(
-                get: { state.settings.data.backdrop },
-                set: { state.settings.data.backdrop = $0 }
-            )) {
-                ForEach(state.backdrops.all) { b in Text(b.name).tag(b.id) }
-            }
             Divider()
             Button("Bigger Text") { state.adjustFontSize(by: 1) }
                 .keyboardShortcut("+", modifiers: .command)

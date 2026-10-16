@@ -4,7 +4,7 @@ import SwiftUI
 
 // The pieces the Settings card is built from: panels of rows in the theme's
 // own colours, a slider and a pill picker drawn to match the rest of the app,
-// tiles for themes and backdrops, and two specimens — a piece of page set in
+// tiles for looks, and two specimens — a piece of page set in
 // the current type, and a line with a live caret — so a setting shows what
 // it does instead of describing it.
 
@@ -371,59 +371,6 @@ struct ColourCell: View {
 
 // MARK: - Tiles
 
-/// A theme as a small piece of its own page: its tint, a heading and two
-/// lines of text in its colours, and its accent as a dot. The chosen one
-/// wears a ring of its accent.
-struct ThemeTile: View {
-    let theme: Theme
-    let selected: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(theme.tint.color)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Aa")
-                            .font(.system(size: 17, weight: .semibold, design: .serif))
-                            .foregroundStyle(Color(nsColor: theme.headingColor))
-                        Capsule().fill(theme.text.color.opacity(0.6)).frame(width: 40, height: 3)
-                        Capsule().fill(theme.text.color.opacity(0.35)).frame(width: 26, height: 3)
-                    }
-                    .padding(10)
-                    Circle()
-                        .fill(theme.accent.color)
-                        .frame(width: 8, height: 8)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(9)
-                }
-                .frame(height: 58)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(selected ? theme.accent.color : Color.primary.opacity(hovering ? 0.25 : 0.12),
-                                      lineWidth: selected ? 2 : 1)
-                )
-                .scaleEffect(hovering && !selected ? 1.02 : 1)
-                Text(theme.name)
-                    .font(.system(size: 11.5, weight: selected ? .medium : .regular))
-                    .lineLimit(1)
-                    .opacity(selected ? 1 : 0.65)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.spring(response: 0.28, dampingFraction: 0.75), value: selected)
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityLabel(theme.name)
-    }
-}
-
 extension BackdropPreset {
     /// The set's colours as the folds will show them under this theme —
     /// the same lightness the shader gives them — for a still tile.
@@ -547,41 +494,6 @@ struct LookTile: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityLabel(look.name)
         .help(look.blurb.isEmpty ? "\(theme.name) over \(backdrop.name)" : look.blurb)
-    }
-}
-
-struct BackdropTile: View {
-    let preset: BackdropPreset
-    let theme: Theme
-    let selected: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                BackdropSwatch(preset: preset, theme: theme)
-                    .frame(height: 52)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(selected ? theme.accent.color : Color.primary.opacity(hovering ? 0.25 : 0.12),
-                                          lineWidth: selected ? 2 : 1)
-                    )
-                    .scaleEffect(hovering && !selected ? 1.02 : 1)
-                Text(preset.name)
-                    .font(.system(size: 11.5, weight: selected ? .medium : .regular))
-                    .lineLimit(1)
-                    .opacity(selected ? 1 : 0.65)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(.spring(response: 0.28, dampingFraction: 0.75), value: selected)
-        .animation(.easeOut(duration: 0.12), value: hovering)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityLabel(preset.name)
     }
 }
 

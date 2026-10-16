@@ -1124,13 +1124,14 @@ struct TypingSection: View {
 
 // MARK: - Look
 
-/// The one section for how the app looks. At the top, the looks: a theme and
-/// a backdrop with its tuning, as one tile — the built-in pairings, then
-/// the user's own, saved from whatever the page is wearing and carried to
-/// another Mac as a file. Under them, the two halves of the look on screen,
-/// a pill apart: the page (the theme and its colours) and what lies behind
-/// the glass (the backdrop, its colours, drift, frost and grain). Change
-/// either and the look's tile lets go; Save keeps the new pairing.
+/// The one section for how the app looks, and the one thing it deals in: a
+/// look. Tiles at the top — the built-in looks, then yours — and under
+/// them the makings of the look on screen: its name, the colours of the
+/// page, the glass, and what lies behind it. A theme and a backdrop are
+/// still what a look is made of underneath, but they are never shown as
+/// things of their own: a built-in look is for looking at, Duplicate makes
+/// one that is yours, and a look of yours is edited in place — every change
+/// is on the page behind the card as it is made.
 struct LookSection: View {
     @EnvironmentObject var state: AppState
     @State private var naming = false
@@ -1145,20 +1146,14 @@ struct LookSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                groupLabel("Looks")
+                groupLabel("Built in")
                 LazyVGrid(columns: gridColumns(4), spacing: 12) {
-                    ForEach(Look.builtIns) { l in
-                        LookTile(look: l, theme: state.themes.theme(id: l.themeID), backdrop: state.backdrops.preset(id: l.backdropID),
-                                 selected: current?.id == l.id) { pick(l) }
-                    }
+                    ForEach(Look.builtIns) { l in tile(l) }
                 }
                 if !state.looks.custom.isEmpty {
                     groupLabel("Mine").padding(.top, 6)
                     LazyVGrid(columns: gridColumns(4), spacing: 12) {
-                        ForEach(state.looks.custom) { l in
-                            LookTile(look: l, theme: state.themes.theme(id: l.themeID), backdrop: state.backdrops.preset(id: l.backdropID),
-                                     selected: current?.id == l.id) { pick(l) }
-                        }
+                        ForEach(state.looks.custom) { l in tile(l) }
                     }
                 }
             }
@@ -1178,72 +1173,54 @@ struct LookSection: View {
                 .transition(.opacity.combined(with: .offset(y: -4)))
             } else {
                 HStack(spacing: 8) {
-                    Button(current == nil ? "Save this look…" : "Save a copy…") {
-                        newName = ""
-                        withAnimation(.easeOut(duration: 0.15)) { naming = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { nameFocused = true }
+                    if let current {
+                        Button("Duplicate") { state.duplicateLook(current) }
+                            .buttonStyle(GlassButtonStyle(theme: theme, prominent: current.isBuiltIn))
+                            .help("A copy of “\(current.name)” whose every colour is yours to change")
+                        Button("Delete") { state.deleteLook(current) }
+                            .buttonStyle(GlassButtonStyle(theme: theme))
+                            .disabled(current.isBuiltIn)
+                            .opacity(current.isBuiltIn ? 0.4 : 1)
+                    } else {
+                        // The page is wearing a mix no tile stands for — after
+                        // following the system across a light and a dark look, say.
+                        Button("Save this look…") {
+                            newName = ""
+                            withAnimation(.easeOut(duration: 0.15)) { naming = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { nameFocused = true }
+                        }
+                        .buttonStyle(GlassButtonStyle(theme: theme, prominent: true))
+                        .help("The page as it is now — \(state.suggestedLookName) — as a look of yours")
                     }
-                    .buttonStyle(GlassButtonStyle(theme: theme, prominent: current == nil))
-                    .help(current == nil
-                          ? "The page as it is now — \(state.suggestedLookName) — under a name of its own"
-                          : "A copy of “\(current?.name ?? "")” to change")
-                    Button("Delete") {
-                        guard let l = current, !l.isBuiltIn else { return }
-                        state.deleteLook(l)
-                    }
-                    .buttonStyle(GlassButtonStyle(theme: theme))
-                    .disabled(current?.isBuiltIn ?? true)
-                    .opacity(current?.isBuiltIn ?? true ? 0.4 : 1)
                     Spacer()
                     Button("Import…") { state.importLook() }
                         .buttonStyle(GlassButtonStyle(theme: theme))
-                        .help("A .glassinelook file: its theme and backdrop come with it")
+                        .help("A .glassinelook file, from another Mac or another person")
                     Button("Export…") { state.exportLook() }
                         .buttonStyle(GlassButtonStyle(theme: theme))
-                        .help("This look — theme, backdrop and tuning — as one file to keep or send")
+                        .help("This look as one file, everything it needs inside")
                 }
                 .transition(.opacity)
             }
 
             SettingsPanel(theme: theme, title: "Appearance") {
-                form.pills("Theme", \.appearanceMode, options: AppearanceMode.allCases, label: { $0.label },
+                form.pills("Look", \.appearanceMode, options: AppearanceMode.allCases, label: { $0.label },
                            keywords: "light dark follow system automatic")
                 if data.appearanceMode == .system {
-                    SettingRow(theme: theme, title: "In light mode", keywords: "light theme") {
-                        themeMenu(dark: false, selection: form.binding(\.lightThemeID))
-                    }
-                    SettingRow(theme: theme, title: "In dark mode", keywords: "dark theme") {
-                        themeMenu(dark: true, selection: form.binding(\.darkThemeID))
-                    }
+                    SettingRow(theme: theme, title: "In light mode", keywords: "light look") { lookMenu(dark: false) }
+                    SettingRow(theme: theme, title: "In dark mode", keywords: "dark look") { lookMenu(dark: true) }
                 }
             }
 
-            // The two halves of the look on screen.
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    PillPicker(theme: theme, selection: $state.lookPart, options: LookPart.allCases, label: { $0.label })
-                    Spacer()
-                    Text(current.map { "Wearing “\($0.name)”" } ?? "Not one of the named looks — Save keeps it")
-                        .font(.system(size: 11))
-                        .opacity(0.5)
-                        .contentTransition(.opacity)
-                        .animation(.easeOut(duration: 0.18), value: current?.id)
-                }
-                Group {
-                    switch state.lookPart {
-                    case .page: ThemeSection()
-                    case .behind: BackdropSection()
-                    }
-                }
-                .id(state.lookPart)
-                .transition(.opacity.combined(with: .offset(y: 6)))
-            }
-            .animation(.easeOut(duration: 0.18), value: state.lookPart)
+            LookEditor(look: current)
         }
     }
 
-    private func pick(_ l: Look) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.applyLook(l) }
+    private func tile(_ l: Look) -> some View {
+        LookTile(look: l, theme: state.themes.theme(id: l.themeID), backdrop: state.backdrops.preset(id: l.backdropID),
+                 selected: current?.id == l.id) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.applyLook(l) }
+        }
     }
 
     private func saveNamed() {
@@ -1251,201 +1228,99 @@ struct LookSection: View {
         withAnimation(.easeOut(duration: 0.15)) { naming = false }
     }
 
-    private func themeMenu(dark: Bool, selection: Binding<String>) -> some View {
-        let options = state.themes.all.filter { $0.isDark == dark }
-        let current = options.first { $0.id == selection.wrappedValue } ?? options.first
+    /// The look for one half of the day, when the appearance follows the
+    /// system: the looks whose page is light, or dark.
+    private func lookMenu(dark: Bool) -> some View {
+        let options = state.looks.all.filter { state.themes.theme(id: $0.themeID).isDark == dark }
+        let slotTheme = dark ? data.darkThemeID : data.lightThemeID
+        let current = options.first { $0.themeID == slotTheme && $0.backdropID == data.backdrop } ?? options.first { $0.themeID == slotTheme }
         return GlassMenu(theme: theme) {
             HStack(spacing: 6) {
                 if let current {
-                    Circle().fill(current.accent.color).frame(width: 7, height: 7)
+                    Circle().fill(state.themes.theme(id: current.themeID).accent.color).frame(width: 7, height: 7)
                 }
                 Text(current?.name ?? "—").font(.system(size: 12))
             }
         } content: {
-            ForEach(options) { t in
-                Button(t.name) { selection.wrappedValue = t.id }
+            ForEach(options) { l in
+                Button(l.name) { state.applyLook(l) }
             }
         }
     }
 }
 
-/// Which half of the look the section shows under the tiles.
-enum LookPart: String, CaseIterable, Identifiable {
-    case page, behind
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .page: return "The page"
-        case .behind: return "Behind the glass"
-        }
-    }
-}
-
-// MARK: - Theme
-
-/// The page's half of a look: the theme, as tiles, and its makings.
-struct ThemeSection: View {
+/// The makings of the look on screen. A built-in look shows its makings
+/// and takes no changes; a look of yours changes under your hands, and the
+/// page behind the card with it. Underneath, a look's page is a theme and
+/// what is behind the glass a backdrop; a change to a part a built-in
+/// supplies makes the look a copy of its own first, so nothing built in is
+/// ever written on.
+struct LookEditor: View {
     @EnvironmentObject var state: AppState
+    let look: Look?
 
     private var theme: Theme { state.theme }
     private var form: SettingsForm { SettingsForm(state: state) }
-    private var data: SettingsData { state.settings.data }
+    private var backdrop: BackdropPreset { state.backdrop }
+    private var locked: Bool { look?.isBuiltIn ?? false }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                groupLabel("Built in")
-                LazyVGrid(columns: gridColumns(5), spacing: 12) {
-                    ForEach(Theme.builtIns) { t in
-                        ThemeTile(theme: t, selected: theme.id == t.id) { pick(t) }
-                    }
-                }
-                if !state.themes.custom.isEmpty {
-                    groupLabel("Mine").padding(.top, 6)
-                    LazyVGrid(columns: gridColumns(5), spacing: 12) {
-                        ForEach(state.themes.custom) { t in
-                            ThemeTile(theme: t, selected: theme.id == t.id) { pick(t) }
-                        }
-                    }
-                }
-            }
-
-            HStack(spacing: 8) {
-                Button("Duplicate") {
-                    let copy = state.themes.duplicate(theme)
-                    state.settings.data.themeID = copy.id
-                }
-                .buttonStyle(GlassButtonStyle(theme: theme, prominent: true))
-                .help("A copy of “\(theme.name)”, yours to change")
-                Button("Delete") {
-                    guard !theme.isBuiltIn else { return }
-                    state.themes.delete(theme)
-                    state.settings.data.themeID = Theme.graphite.id
-                }
-                .buttonStyle(GlassButtonStyle(theme: theme))
-                .disabled(theme.isBuiltIn)
-                .opacity(theme.isBuiltIn ? 0.4 : 1)
-                Spacer()
-                Button("Import theme…", action: importTheme).buttonStyle(GlassButtonStyle(theme: theme))
-                    .help("A theme on its own (.glassinetheme). A whole look imports above.")
-                Button("Export theme…", action: exportTheme).buttonStyle(GlassButtonStyle(theme: theme))
-                    .help("The theme on its own, without its backdrop. Export above for the whole look.")
-            }
-
-            ThemeEditor(theme: theme)
-        }
-    }
-
-    private func pick(_ t: Theme) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.chooseTheme(t.id) }
-    }
-
-    private func importTheme() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                let t = try state.themes.importTheme(from: url)
-                state.settings.data.themeID = t.id
-            } catch {
-                state.errorMessage = "Couldn't import that theme: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func exportTheme() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = theme.name.sanitizedFileStem + ".glassinetheme.json"
-        if panel.runModal() == .OK, let url = panel.url {
-            try? state.themes.export(theme, to: url)
-        }
-    }
-}
-
-/// The selected theme's makings: its name, its glass, and its colours. Built-in
-/// themes show theirs but take no changes; Duplicate makes one that does.
-struct ThemeEditor: View {
-    @EnvironmentObject var state: AppState
-    let theme: Theme
-
-    private func binding<T>(_ keyPath: WritableKeyPath<Theme, T>) -> Binding<T> {
-        Binding(
-            get: { state.theme[keyPath: keyPath] },
-            set: { newValue in
-                var t = state.theme
-                t[keyPath: keyPath] = newValue
-                state.themes.update(t)
-            }
-        )
+    // The page's colours and glass go through the look, which forks a
+    // built-in theme into one of its own on the first change.
+    private func themeBinding<T>(_ keyPath: WritableKeyPath<Theme, T>) -> Binding<T> {
+        Binding(get: { state.theme[keyPath: keyPath] },
+                set: { v in state.editLookTheme { $0[keyPath: keyPath] = v } })
     }
 
     private func colorBinding(_ keyPath: WritableKeyPath<Theme, HexColor>) -> Binding<Color> {
-        Binding(
-            get: { state.theme[keyPath: keyPath].color },
-            set: { newValue in
-                var t = state.theme
-                t[keyPath: keyPath] = HexColor(newValue)
-                state.themes.update(t)
-            }
-        )
+        Binding(get: { state.theme[keyPath: keyPath].color },
+                set: { v in state.editLookTheme { $0[keyPath: keyPath] = HexColor(v) } })
     }
 
     private func optionalColorBinding(_ keyPath: WritableKeyPath<Theme, HexColor?>, fallback: NSColor) -> Binding<Color> {
-        Binding(
-            get: { (state.theme[keyPath: keyPath]?.nsColor ?? fallback).asColor },
-            set: { newValue in
-                var t = state.theme
-                t[keyPath: keyPath] = HexColor(newValue)
-                state.themes.update(t)
-            }
-        )
+        Binding(get: { (state.theme[keyPath: keyPath]?.nsColor ?? fallback).asColor },
+                set: { v in state.editLookTheme { $0[keyPath: keyPath] = HexColor(v) } })
+    }
+
+    private func foldBinding(_ i: Int) -> Binding<Color> {
+        let colors = backdrop.colors(for: theme)
+        return Binding(get: { colors.indices.contains(i) ? colors[i].color : .gray },
+                       set: { v in state.editLookBackdrop { p in if p.colors.indices.contains(i) { p.colors[i] = HexColor(v) } } })
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(get: { look?.name ?? state.suggestedLookName },
+                set: { v in if var l = look, !l.isBuiltIn { l.name = v; state.looks.update(l) } })
+    }
+
+    /// Drift, frost and grain are the page's settings, and the look's.
+    private func tuning<T>(_ kp: WritableKeyPath<SettingsData, T>, _ lp: WritableKeyPath<Look, T>) -> Binding<T> {
+        Binding(get: { state.settings.data[keyPath: kp] },
+                set: { v in
+                    state.settings.data[keyPath: kp] = v
+                    if var l = look, !l.isBuiltIn { l[keyPath: lp] = v; state.looks.update(l) }
+                })
     }
 
     var body: some View {
-        let locked = theme.isBuiltIn
         VStack(alignment: .leading, spacing: 18) {
-            if locked {
-                LockedNote(text: "“\(theme.name)” is built in, so these are for looking at. Duplicate makes a copy whose every colour is yours.")
+            if let look, locked {
+                LockedNote(text: "“\(look.name)” is built in, so these are for looking at. Duplicate makes a copy whose every colour is yours.")
             }
             Group {
                 SettingsPanel(theme: theme, title: "Name") {
                     SettingRow(theme: theme, title: "Name") {
-                        GlassTextField(theme: theme, placeholder: "Name", text: binding(\.name))
-                    }
-                    SettingRow(theme: theme, title: "Dark appearance", keywords: "light dark") {
-                        GlassToggle(theme: theme, isOn: binding(\.isDark))
-                    }
-                }
-
-                SettingsPanel(theme: theme, title: "Glass") {
-                    SettingRow(theme: theme, title: "Material", keywords: "glass blur soft deep sidebar thin frosted opaque") {
-                        GlassMenu(theme: theme) {
-                            Text(theme.material.label).font(.system(size: 12))
-                        } content: {
-                            ForEach(GlassMaterial.allCases) { m in
-                                Button(m.label) { binding(\.material).wrappedValue = m }
-                            }
+                        if locked || look == nil {
+                            Text(look?.name ?? state.suggestedLookName).font(.system(size: 12.5)).opacity(0.7)
+                        } else {
+                            GlassTextField(theme: theme, placeholder: "Name", text: nameBinding)
                         }
                     }
-                    SettingRow(theme: theme, title: "Tint", keywords: "colour glass") {
-                        ColorPicker("", selection: colorBinding(\.tint), supportsOpacity: false)
-                            .labelsHidden()
-                            .controlSize(.small)
-                    }
-                    SettingRow(theme: theme, title: "Tint strength", keywords: "opacity") {
-                        GlassSlider(theme: theme, value: binding(\.tintOpacity), range: 0...1, step: 0.01, format: "%.0f%%", scale: 100)
-                    }
-                    SettingRow(theme: theme, title: "Paper grain", keywords: "noise texture") {
-                        GlassSlider(theme: theme, value: binding(\.grain), range: 0...0.2, step: 0.005, format: "%.1f%%", scale: 100)
-                    }
-                    SettingRow(theme: theme, title: "Sidebar tint", keywords: "sidebar opacity") {
-                        GlassSlider(theme: theme, value: binding(\.sidebarOpacity), range: 0...1, step: 0.01, format: "%.0f%%", scale: 100)
+                    SettingRow(theme: theme, title: "Dark appearance", caption: "A dark page, and deep folds behind it; off, a light page over pale ones.", keywords: "light dark") {
+                        GlassToggle(theme: theme, isOn: themeBinding(\.isDark))
                     }
                 }
 
-                SettingsPanel(theme: theme, title: "Colours") {
+                SettingsPanel(theme: theme, title: "The page") {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)], spacing: 0) {
                         ColourCell(theme: theme, title: "Text", color: colorBinding(\.text))
                         ColourCell(theme: theme, title: "Headings", color: optionalColorBinding(\.heading, fallback: theme.headingColor))
@@ -1457,190 +1332,103 @@ struct ThemeEditor: View {
                         ColourCell(theme: theme, title: "Caret", color: optionalColorBinding(\.caret, fallback: theme.caretColor))
                         ColourCell(theme: theme, title: "Selection", color: optionalColorBinding(\.selection, fallback: theme.selectionColor), supportsOpacity: true)
                     }
+                    SettingRow(theme: theme, title: "Glass", keywords: "material blur soft deep sidebar thin frosted opaque") {
+                        GlassMenu(theme: theme) {
+                            Text(theme.material.label).font(.system(size: 12))
+                        } content: {
+                            ForEach(GlassMaterial.allCases) { m in
+                                Button(m.label) { themeBinding(\.material).wrappedValue = m }
+                            }
+                        }
+                    }
+                    SettingRow(theme: theme, title: "Tint", keywords: "colour glass") {
+                        ColorPicker("", selection: colorBinding(\.tint), supportsOpacity: false)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                    SettingRow(theme: theme, title: "Tint strength", keywords: "opacity") {
+                        GlassSlider(theme: theme, value: themeBinding(\.tintOpacity), range: 0...1, step: 0.01, format: "%.0f%%", scale: 100)
+                    }
+                    SettingRow(theme: theme, title: "Sidebar tint", keywords: "sidebar opacity") {
+                        GlassSlider(theme: theme, value: themeBinding(\.sidebarOpacity), range: 0...1, step: 0.01, format: "%.0f%%", scale: 100)
+                    }
+                }
+
+                SettingsPanel(theme: theme, title: "Behind the glass") {
+                    SettingRow(theme: theme, title: "Behind the glass", keywords: "backdrop desktop wallpaper folds colour") {
+                        PillPicker(theme: theme, selection: Binding(
+                            get: { backdrop.isDesktop ? 1 : 0 },
+                            set: { state.setLookBehind(desktop: $0 == 1) }),
+                            options: [0, 1], label: { $0 == 1 ? "The desktop" : "Folds of colour" })
+                    }
+                    if backdrop.isDesktop {
+                        PanelNote(theme: theme, text: "The window is a blur of whatever is behind it — the wallpaper, or the windows behind. The page's own grain lies over it.")
+                        SettingRow(theme: theme, title: "Paper grain", keywords: "noise texture") {
+                            GlassSlider(theme: theme, value: themeBinding(\.grain), range: 0...0.2, step: 0.005, format: "%.1f%%", scale: 100)
+                        }
+                    } else {
+                        folds
+                        SettingRow(theme: theme, title: "Drift", caption: "The folds move, slowly. Never under Reduce Motion.", keywords: "motion animate still") {
+                            GlassToggle(theme: theme, isOn: tuning(\.backdropDrift, \.drift))
+                        }
+                        SettingRow(theme: theme, title: "Frost", caption: "Pales and softens the colour — gently at first, all the way at 100%.", keywords: "pale soft wash") {
+                            GlassSlider(theme: theme, value: tuning(\.backdropFrost, \.frost), range: 0...1, step: 0.05, format: "%.0f%%", scale: 100)
+                        }
+                        SettingRow(theme: theme, title: "Paper grain", caption: "A fine, still texture over the folds.", keywords: "noise texture") {
+                            GlassSlider(theme: theme, value: tuning(\.backdropGrain, \.grain), range: 0...0.2, step: 0.005, format: "%.1f%%", scale: 100)
+                        }
+                    }
                 }
             }
             .disabled(locked)
             .opacity(locked ? 0.55 : 1)
         }
     }
-}
 
-// MARK: - Behind the glass
-
-struct BackdropSection: View {
-    @EnvironmentObject var state: AppState
-
-    private var theme: Theme { state.theme }
-    private var form: SettingsForm { SettingsForm(state: state) }
-    private var data: SettingsData { state.settings.data }
-    private var current: BackdropPreset { state.backdrops.preset(id: data.backdrop) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                // The quiet sets first — three near colours, deep — then the
-                // bold ones, which run the wheel.
-                groupLabel("Quiet")
-                LazyVGrid(columns: gridColumns(6), spacing: 12) {
-                    ForEach(BackdropPreset.builtIns.filter { $0.colors.isEmpty || BackdropPreset.quietIDs.contains($0.id) }) { b in
-                        BackdropTile(preset: b, theme: theme, selected: data.backdrop == b.id) { pick(b) }
-                    }
-                }
-                groupLabel("Bold").padding(.top, 6)
-                LazyVGrid(columns: gridColumns(6), spacing: 12) {
-                    ForEach(BackdropPreset.builtIns.filter { !$0.colors.isEmpty && !BackdropPreset.quietIDs.contains($0.id) }) { b in
-                        BackdropTile(preset: b, theme: theme, selected: data.backdrop == b.id) { pick(b) }
-                    }
-                }
-                if !state.backdrops.custom.isEmpty {
-                    groupLabel("Mine").padding(.top, 6)
-                    LazyVGrid(columns: gridColumns(6), spacing: 12) {
-                        ForEach(state.backdrops.custom) { b in
-                            BackdropTile(preset: b, theme: theme, selected: data.backdrop == b.id) { pick(b) }
+    /// The colours the folds run round: three to five wells, in order.
+    private var folds: some View {
+        let colors = backdrop.colors(for: theme)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ForEach(colors.indices, id: \.self) { i in
+                    VStack(spacing: 3) {
+                        ColorPicker("", selection: foldBinding(i), supportsOpacity: false)
+                            .labelsHidden()
+                        if !locked, colors.count > BackdropPreset.minColors {
+                            Button {
+                                state.editLookBackdrop { $0.colors.remove(at: i) }
+                            } label: {
+                                Image(systemName: "minus.circle").font(.system(size: 10)).opacity(0.5)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove this colour")
+                        } else {
+                            Text(i == 0 ? "ground" : " ").font(.system(size: 9)).opacity(0.45)
                         }
                     }
                 }
-            }
-
-            HStack(spacing: 8) {
-                Button("Duplicate") {
-                    let copy = state.backdrops.duplicate(current, for: theme)
-                    state.settings.data.backdrop = copy.id
+                if !locked, colors.count < BackdropPreset.maxColors {
+                    Button {
+                        state.editLookBackdrop { $0.colors.append($0.colors.last ?? BackdropPreset.hsb(250, 0.5, 0.12)) }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 30, height: 22)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(theme.text.color.opacity(0.08)))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 14)
+                    .help("Add a colour")
                 }
-                .buttonStyle(GlassButtonStyle(theme: theme, prominent: true))
-                .disabled(current.isDesktop)
-                .opacity(current.isDesktop ? 0.4 : 1)
-                .help("A copy of “\(current.name)” whose colours are yours to change")
-                Button("Delete") {
-                    guard !current.isBuiltIn else { return }
-                    state.backdrops.delete(current)
-                    state.settings.data.backdrop = BackdropPreset.softSkyID
-                }
-                .buttonStyle(GlassButtonStyle(theme: theme))
-                .disabled(current.isBuiltIn)
-                .opacity(current.isBuiltIn ? 0.4 : 1)
                 Spacer()
             }
-
-            BackdropEditor(preset: current)
+            Text("Three to five, all on screen at once: the folds run round them in this order. Hue and saturation are what count — the page sets the lightness, deep under a dark page and pale under a light one. The first colour also tints the ground.")
+                .font(.system(size: 11))
+                .opacity(0.55)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func pick(_ b: BackdropPreset) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.settings.data.backdrop = b.id }
-    }
-}
-
-/// The selected backdrop: its colours, to change on one of the user's own,
-/// and the drift, frost and grain that apply to all of them.
-struct BackdropEditor: View {
-    @EnvironmentObject var state: AppState
-    let preset: BackdropPreset
-
-    private var theme: Theme { state.theme }
-    private var form: SettingsForm { SettingsForm(state: state) }
-    private var colors: [HexColor] { preset.colors(for: theme) }
-
-    private func colorBinding(_ i: Int) -> Binding<Color> {
-        Binding(
-            get: { colors.indices.contains(i) ? colors[i].color : .gray },
-            set: { newValue in
-                var p = preset
-                guard p.colors.indices.contains(i) else { return }
-                p.colors[i] = HexColor(newValue)
-                state.backdrops.update(p)
-            }
-        )
-    }
-
-    private var nameBinding: Binding<String> {
-        Binding(get: { preset.name }, set: { var p = preset; p.name = $0; state.backdrops.update(p) })
-    }
-
-    var body: some View {
-        let locked = preset.isBuiltIn
-        VStack(alignment: .leading, spacing: 18) {
-            if preset.isDesktop {
-                SettingsPanel(theme: theme, title: "Desktop") {
-                    PanelNote(theme: theme, text: preset.blurb)
-                    PanelNote(theme: theme, text: "Pick a set of colours to put folds of colour inside the window instead — deep and slow, like silk lit from one side — for a desk without a wallpaper worth looking through. Duplicate a set to make a copy whose colours are yours.")
-                }
-            } else {
-                if locked {
-                    LockedNote(text: "“\(preset.name)” is built in. Duplicate makes a copy whose colours are yours to change.")
-                }
-                SettingsPanel(theme: theme, title: "Set") {
-                    SettingRow(theme: theme, title: "Name") {
-                        if locked {
-                            Text(preset.name).font(.system(size: 12.5)).opacity(0.7)
-                        } else {
-                            GlassTextField(theme: theme, placeholder: "Name", text: nameBinding)
-                        }
-                    }
-                    if !preset.blurb.isEmpty {
-                        PanelNote(theme: theme, text: preset.blurb)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 10) {
-                            ForEach(colors.indices, id: \.self) { i in
-                                VStack(spacing: 3) {
-                                    ColorPicker("", selection: colorBinding(i), supportsOpacity: false)
-                                        .labelsHidden()
-                                    if !locked, colors.count > BackdropPreset.minColors {
-                                        Button {
-                                            var p = preset
-                                            p.colors.remove(at: i)
-                                            state.backdrops.update(p)
-                                        } label: {
-                                            Image(systemName: "minus.circle").font(.system(size: 10)).opacity(0.5)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("Remove this colour")
-                                    } else {
-                                        Text(i == 0 ? "ground" : " ").font(.system(size: 9)).opacity(0.45)
-                                    }
-                                }
-                            }
-                            if !locked, colors.count < BackdropPreset.maxColors {
-                                Button {
-                                    var p = preset
-                                    p.colors.append(p.colors.last ?? BackdropPreset.hsb(250, 0.8))
-                                    state.backdrops.update(p)
-                                } label: {
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .frame(width: 30, height: 22)
-                                        .background(RoundedRectangle(cornerRadius: 5).fill(theme.text.color.opacity(0.08)))
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.bottom, 14)
-                                .help("Add a colour")
-                            }
-                            Spacer()
-                        }
-                        .disabled(locked)
-                        .opacity(locked ? 0.7 : 1)
-                        Text("Three to five, all on screen at once: the folds run round the set in this order, so each colour has folds of its own. Hue and saturation are what count — the theme sets the lightness, deep on a dark theme and pale on a light one, so the text stays readable over every part. The first colour also tints the ground.")
-                            .font(.system(size: 11))
-                            .opacity(0.55)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(12)
-                }
-                SettingsPanel(theme: theme, title: "For every backdrop") {
-                    form.toggle("Drift", \.backdropDrift,
-                                caption: "The folds move, slowly. Never under Reduce Motion.",
-                                keywords: "motion animate still")
-                    form.slider("Frost", \.backdropFrost, range: 0...1, step: 0.05, format: "%.0f%%", scale: 100,
-                                caption: "Pales and softens the colour — gently at first, all the way at 100%.",
-                                keywords: "pale soft wash")
-                    form.slider("Paper grain", \.backdropGrain, range: 0...0.2, step: 0.005, format: "%.1f%%", scale: 100,
-                                caption: "Its own grain, over the folds; silk wants more of it than glass.",
-                                keywords: "noise texture")
-                }
-            }
-        }
+        .padding(12)
     }
 }
 

@@ -159,13 +159,129 @@ final class AppState: ObservableObject {
     }
 
     /// What the page is wearing, as a look of the user's own under a name.
+    /// A custom theme or set it wears is copied, so the look owns its makings
+    /// and editing one look never changes another.
     @discardableResult
     func saveLook(named name: String) -> Look {
         let d = settings.data
-        let look = Look(id: UUID().uuidString, name: name.trimmingCharacters(in: .whitespaces).isEmpty ? suggestedLookName : name,
-                        themeID: theme.id, backdropID: d.backdrop, drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain)
+        let title = name.trimmingCharacters(in: .whitespaces).isEmpty ? suggestedLookName : name
+        var themeID = theme.id
+        if !theme.isBuiltIn { let t = theme.renamed(title); themes.update(t); themeID = t.id }
+        var backdropID = d.backdrop
+        if !backdrop.isBuiltIn { let b = backdrop.renamed(title); backdrops.update(b); backdropID = b.id }
+        let look = Look(id: UUID().uuidString, name: title, themeID: themeID, backdropID: backdropID,
+                        drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain)
         looks.add(look)
+        applyLook(look)
         return look
+    }
+
+    /// A copy of a look that is the user's to change: its theme and its set
+    /// copied too (a built-in set of the desktop's stays the desktop; Aurora's
+    /// copy takes the colours it has under the theme), named after the look.
+    @discardableResult
+    func duplicateLook(_ source: Look) -> Look {
+        let name = source.name + " Copy"
+        let srcTheme = themes.theme(id: source.themeID)
+        let t = srcTheme.renamed(name)
+        themes.update(t)
+        let srcBackdrop = backdrops.preset(id: source.backdropID)
+        var backdropID = srcBackdrop.id
+        if !srcBackdrop.isDesktop {
+            var copy = backdrops.duplicate(srcBackdrop, for: srcTheme)
+            copy.name = name
+            backdrops.update(copy)
+            backdropID = copy.id
+        }
+        let look = Look(id: UUID().uuidString, name: name, themeID: t.id, backdropID: backdropID,
+                        drift: source.drift, frost: source.frost, grain: source.grain)
+        looks.add(look)
+        applyLook(look)
+        return look
+    }
+
+    /// The look on screen, when it is the user's own — what the editor writes to.
+    private var editableLook: Look? {
+        guard let l = currentLook, !l.isBuiltIn else { return nil }
+        return l
+    }
+
+    /// A change to the page's colours or glass. Through the look on screen:
+    /// a theme the look shares with the built-ins (or with another look) is
+    /// copied into one of the look's own first, so nothing else changes.
+    func editLookTheme(_ change: (inout Theme) -> Void) {
+        guard var look = editableLook else { return }
+        var t = theme
+        let shared = t.isBuiltIn || looks.custom.contains { $0.id != look.id && $0.themeID == t.id }
+        if shared {
+            t = t.renamed(look.name)
+            look.themeID = t.id
+        }
+        change(&t)
+        themes.update(t)
+        if shared {
+            looks.update(look)
+            applyLook(look)
+        }
+    }
+
+    /// A change to the colours behind the glass, the same way.
+    func editLookBackdrop(_ change: (inout BackdropPreset) -> Void) {
+        guard var look = editableLook else { return }
+        var b = backdrop
+        let shared = b.isBuiltIn || looks.custom.contains { $0.id != look.id && $0.backdropID == b.id }
+        if shared {
+            var copy = b.renamed(look.name)
+            copy.colors = b.isDesktop ? BackdropPreset.softSky.colors : b.colors(for: theme)
+            b = copy
+            look.backdropID = b.id
+        }
+        change(&b)
+        backdrops.update(b)
+        if shared {
+            looks.update(look)
+            applyLook(look)
+        }
+    }
+
+    /// The desktop behind the glass, or folds of colour: on the way back to
+    /// folds, Soft Sky's colours as a set of the look's own.
+    func setLookBehind(desktop: Bool) {
+        guard var look = editableLook else { return }
+        if desktop {
+            look.backdropID = BackdropPreset.desktopID
+        } else {
+            let set = BackdropPreset.softSky.renamed(look.name)
+            backdrops.update(set)
+            look.backdropID = set.id
+        }
+        looks.update(look)
+        applyLook(look)
+    }
+
+    /// Looks for what was made before there were looks: a custom theme or a
+    /// custom set that no look uses becomes a look of its own — over the page
+    /// or the folds of the moment — so nothing anyone made goes out of reach;
+    /// and the page as it stands, if no tile stands for it, becomes one too.
+    /// Once, on the first launch with looks.
+    private func adoptOrphansIntoLooks() {
+        guard !settings.data.looksAdopted else { return }
+        let d = settings.data
+        let taken = Set(looks.all.map(\.name))
+        func name(_ base: String) -> String { taken.contains(base) ? base + " (mine)" : base }
+        for b in backdrops.custom where !looks.custom.contains(where: { $0.backdropID == b.id }) {
+            looks.add(Look(id: UUID().uuidString, name: name(b.name), themeID: theme.id, backdropID: b.id,
+                           drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain))
+        }
+        for t in themes.custom where !looks.custom.contains(where: { $0.themeID == t.id }) {
+            looks.add(Look(id: UUID().uuidString, name: name(t.name), themeID: t.id, backdropID: d.backdrop,
+                           drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain))
+        }
+        if currentLook == nil {
+            looks.add(Look(id: UUID().uuidString, name: suggestedLookName, themeID: theme.id, backdropID: d.backdrop,
+                           drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain))
+        }
+        settings.data.looksAdopted = true
     }
 
     /// "Midnight over Soft Sky": a name for the page's look as it stands.
@@ -174,9 +290,19 @@ final class AppState: ObservableObject {
         return b.isDesktop ? "\(theme.name) over the desktop" : "\(theme.name) over \(b.name)"
     }
 
+    /// A look of the user's goes, and its makings with it when nothing else
+    /// uses them; the page puts on Soft Sky if it was wearing the look.
     func deleteLook(_ look: Look) {
         guard !look.isBuiltIn else { return }
+        let wearing = currentLook?.id == look.id
         looks.delete(look)
+        if let t = themes.custom.first(where: { $0.id == look.themeID }), !looks.custom.contains(where: { $0.themeID == t.id }) {
+            themes.delete(t)
+        }
+        if let b = backdrops.custom.first(where: { $0.id == look.backdropID }), !looks.custom.contains(where: { $0.backdropID == b.id }) {
+            backdrops.delete(b)
+        }
+        if wearing { applyLook(.softSky) }
     }
 
     /// Export…: the look on screen — the named one, or the page as it
@@ -277,9 +403,6 @@ final class AppState: ObservableObject {
     @Published var settingsTab = 0
     /// What is typed into the search field at the top of Settings.
     @Published var settingsQuery = ""
-    /// Which half of the look the Look section shows under its tiles — the
-    /// page, or what lies behind the glass — kept so it reopens as it was.
-    @Published var lookPart: LookPart = .page
     /// Bumped to put the keyboard in that field (⌘F while Settings is up).
     @Published var settingsSearchFocus = 0
     /// The theme as the page draws it: over a backdrop, a light theme's quiet
@@ -327,6 +450,7 @@ final class AppState: ObservableObject {
             settings.data.backdrop = BackdropPreset.softSkyID
         }
         looks.prune(themes: themes, backdrops: backdrops)
+        adoptOrphansIntoLooks()
 
         bootstrapLibrary()
         startPolling()
@@ -401,7 +525,7 @@ final class AppState: ObservableObject {
         switch UserDefaults.standard.string(forKey: "glassine.launchView") {
         case "review": if document != nil { reviewMode = true }
         case "daily": showDaily()
-        case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.look.index; lookPart = .behind
+        case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.look.index
         case "trash": trashCurrentDocument()   // the "Move to the Trash?" sheet, for a picture of it
         case "tour": showingTour = true
         case "carousel":
@@ -412,7 +536,6 @@ final class AppState: ObservableObject {
             showingSettings = true
             let name = view.split(separator: ":").dropFirst().first.map(String.init) ?? ""
             settingsTab = (SettingsOverlay.Pane.named(name) ?? .type).index
-            if name == "backdrop" || name == "backdrops" { lookPart = .behind }
             if let q = UserDefaults.standard.string(forKey: "glassine.settingsQuery") { settingsQuery = q }
         default: break
         }
@@ -1550,14 +1673,6 @@ final class AppState: ObservableObject {
         for l in looks.all {
             let mark = wearing == l.id ? "  ✓" : ""
             add("look-\(l.id)", "Look: \(l.name)\(mark)") { [weak self] in self?.applyLook(l) }
-        }
-        for t in themes.all {
-            let mark = theme.id == t.id ? "  ✓" : ""
-            add("theme-\(t.id)", "Theme: \(t.name)\(mark)") { [weak self] in self?.chooseTheme(t.id) }
-        }
-        for b in backdrops.all {
-            let mark = settings.data.backdrop == b.id ? "  ✓" : ""
-            add("backdrop-\(b.id)", "Backdrop: \(b.name)\(mark)") { [weak self] in self?.settings.data.backdrop = b.id }
         }
         add("float", settings.data.floatOnTop ? "Stop floating over other windows" : "Float over other windows", keys: "⌘.") { [weak self] in self?.toggleFloating() }
         if sync.isConnected {

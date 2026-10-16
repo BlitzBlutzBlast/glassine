@@ -149,13 +149,7 @@ Settings → Caret, with a live line to watch it on. Smooth movement on or off, 
 
 ## Looks
 
-A look is the page and what lies behind it together — a theme, a backdrop, and the backdrop's drift, frost and grain — the unit you pick, save and share. Eight come built in, Soft Sky first (Midnight over three deep, neighbouring colours; the default): Slate, Deep Water, Pine, Plum, Umber, Linen (light) and Desktop. Settings → Look shows them as tiles; under them a pill switches between the two halves, *The page* (the theme) and *Behind the glass* (the backdrop). Change either and the look lets go; **Save this look…** keeps the new pairing under a name. **Export…** writes a look to a `.glassinelook.json` file with its theme and backdrop inside, and **Import…** reads one — so a look travels whole to another Mac or another person. View → Look and the ⌘K command bar apply one from anywhere.
-
-## Themes
-
-Nine built in: Dusk, Ocean, Lavender, Graphite, Sepia Night, Midnight (the default, as the page of Soft Sky), Moss, Frost and Paper. Pick one under View → Theme.
-
-To make your own: Settings → Look → The page, click the tile closest to what you want, press **Duplicate**, then edit. Everything is live in the main window while you tweak. A theme controls the glass material, the tint color and how strongly it covers the blur, an optional paper grain, and the colors for text, headings, accent, Markdown syntax, quotes, code, links, caret and selection. Themes export as small JSON files (**Export theme…**), so they're easy to share or keep in a dotfiles repo; a look carries the theme with its backdrop.
+How the window looks is one setting: a **look** — the colours of the page, the glass it is set in, and the folds of colour (or the desktop) behind the glass. Eight come built in, Soft Sky first (a cool page on a deep violet-blue night; the default): Slate, Deep Water, Pine, Plum, Umber, Linen (light) and Desktop. Settings → Look shows them as tiles; pick one and the whole window follows. Under the tiles, the makings of the look on screen — its name, nine colours, the glass material and tint, the folds' three to five colours with drift, frost and grain, or the desktop instead. A built-in look is for looking at; **Duplicate** makes one that is yours, edited in place with everything live behind the card. **Export…** writes a look to a `.glassinelook.json` file with everything inside, and **Import…** reads one. View → Look and the ⌘K command bar apply one from anywhere; ⌘Z in Settings takes a whole look back.
 
 Glass materials, roughly: *Soft glass* is the standard window blur, *Deep glass* is darker and blurrier, *Thin glass* lets more of the desktop through, *Frosted* is a light haze, and *Opaque* turns the blur off entirely.
 
@@ -201,7 +195,7 @@ Headings are centered by default, in the editor and in Review alike; Settings �
 
 ## Appearance
 
-Settings → Look → Appearance can follow the system: pick one light theme and one dark theme and Glassine switches with macOS. Otherwise the chosen theme stays put.
+Settings → Look → Appearance can follow the system: pick one light look and one dark look and Glassine switches with macOS. Otherwise the chosen look stays put.
 
 ![Glassine in the Paper theme: a launch checklist on light glass](docs/screenshots/light.jpg)
 
@@ -231,7 +225,7 @@ The full manual — every feature, setting, key and small delight — is at **[d
 
 ```
 Sources/Glassine/
-  App/        GlassineApp (scenes, menus), AppState, Settings, Theme
+  App/        GlassineApp (scenes, menus), AppState, Settings, Theme, Look (a theme and a backdrop as one)
   Library/    Library (iCloud folder scanning + file operations), Document (autosave, renaming)
   Editor/     GlassineTextView (smooth caret, layout, typewriter, focus), MarkdownStyler, StyleConfig, EditorView bridge
   UI/         ContentView, SidebarView, EditorContainerView, SettingsView, GlassBackground
@@ -239,8 +233,8 @@ Sources/Glassine/
 Resources/    Info.plist, icon (make_icon.py draws it), entitlements for each build flavor
 docs/appstore/  the store listing, a showcase library, and the script that takes the screenshots
 docs/site/    the documentation site (Mintlify): docs.json plus one .mdx per page
-site/         glassine.ink, the one-page site (static HTML, served by Vercel; vercel.json holds the redirects; screenshots.sh takes its pictures, the README's and the manual's)
-tests/        synctest.sh (the merge, with no network), compare-shots.sh (the same pictures from two builds, compared), shot-sidebar.sh (the calendar and a row carried through the tree, on a temp library), shot-toggle.sh (the sidebar shown and hidden in quick succession over a long document), shot-review.sh (one document in every Review style, both themes, and contact sheets of them), ioscheck.sh (does the shared code still compile for iOS?)
+site/         glassine.ink, the one-page site (static HTML, served by Vercel; vercel.json holds the redirects; api/appcast.js serves feed/appcast.xml and counts the update checks; screenshots.sh takes its pictures, the README's and the manual's)
+tests/        synctest.sh (the merge, with no network), shot-views.sh (the Timelapse in both scopes, a day's wall, the fanned pages, Settings → Look, the tour's steps), compare-shots.sh (the same pictures from two builds, compared), shot-sidebar.sh (the calendar and a row carried through the tree, on a temp library), shot-toggle.sh (the sidebar shown and hidden in quick succession over a long document), shot-review.sh (one document in every Review style, both themes, and contact sheets of them), ioscheck.sh (does the shared code still compile for iOS?)
 build.sh      assembles and signs Glassine.app (--appstore for the sandboxed flavor, --demo for Glassine Demo.app: sample pages for a library, for pictures and recordings)
 release.sh    notarized .dmg for direct download;  appstore.sh  signed .pkg for the Mac App Store
 ```

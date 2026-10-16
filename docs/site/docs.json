@@ -29,6 +29,10 @@
       "href": "https://github.com/a-libre/glassine"
     }
   },
+  "redirects": [
+    { "source": "/appearance/themes", "destination": "/appearance/looks" },
+    { "source": "/appearance/backdrop", "destination": "/appearance/looks" }
+  ],
   "navigation": {
     "groups": [
       {
@@ -67,7 +71,7 @@
       },
       {
         "group": "Appearance",
-        "pages": ["appearance/looks", "appearance/themes", "appearance/backdrop", "appearance/typography"]
+        "pages": ["appearance/looks", "appearance/typography"]
       },
       {
         "group": "Reference",

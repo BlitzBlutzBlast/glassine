@@ -1,36 +1,91 @@
 ---
 title: "Looks"
-description: "A theme and a backdrop, kept together: eight built in, yours to save from whatever the page is wearing, and one file to share."
+description: "How Glassine looks is one setting: a look. Eight built in, yours to copy and change, one file to share."
 icon: "swatchbook"
 ---
 
-A theme sets the colours of the page and its glass; a backdrop puts folds of colour behind the glass; frost, drift and grain tune the backdrop. None of them reads right alone — a backdrop takes its lightness from the theme, the theme's tint veils the backdrop, a light page wants a pale set behind it — so the thing you pick, keep and send is the pair with its tuning: a **look**.
+<Frame>
+  <img src="/images/backdrops.jpg" alt="Settings → Look: tiles of the looks, the chosen one's folds showing through the card" />
+</Frame>
 
-**Settings → Look** is the one section for all of it (⌘, then *Look* in the rail; Settings reopens where you left it). The looks are tiles at the top, each a small picture of the window — the folds, and a chip of the page on them. Under them, a pill switches between the two halves of the look on screen: **The page** (the [theme](/appearance/themes), its tiles and its editor) and **Behind the glass** (the [backdrop](/appearance/backdrop), its colours, drift, frost and grain). Change either and the look's tile lets go — the line beside the pill says so — and **Save this look…** keeps the new pairing under a name of its own, in *Mine*.
-
-View → Look, and *Look: …* in the ⌘K command bar, apply a look from anywhere. ⌘Z in Settings takes a whole look back as one step.
+Everything about how the window looks — the colours of the page, the glass it is set in, and the folds of colour (or the desktop) behind the glass — is one thing, a **look**. Settings → Look is the one section for it: the looks as tiles at the top, and under them the makings of the look on screen. Pick a tile and the whole window follows at once, Review's Glass style included. View → Look and *Look: …* in the ⌘K command bar do the same from anywhere; ⌘Z in Settings takes a whole look back as one step.
 
 ## Built in
 
-Eight, Soft Sky first — the one the app comes with. Seven pair a built-in theme with a quiet set made for it; the eighth is the desktop through the glass, the way the first versions looked.
+Eight, Soft Sky first — the one the app comes with.
 
-| Look | Page over backdrop | |
-|---|---|---|
-| **Soft Sky** | Midnight over Soft Sky | A cool page on a deep violet-blue night. The default. |
-| **Slate** | Graphite over Slate | Warm text and a copper accent on the quietest grey. |
-| **Deep Water** | Ocean over Deep Water | Blues and teals, deep. |
-| **Pine** | Moss over Pine | Green-black, with a lime accent. |
-| **Plum** | Dusk over Plum | Violet glass over violet folds, with a cyan accent. |
-| **Umber** | Sepia Night over Umber | Warm darks, a terracotta accent. |
-| **Linen** | Paper over Linen | A light page on warm, pale folds. |
-| **Desktop** | Dusk over the desktop | The wallpaper, blurred, behind the glass. |
+| Look | |
+|---|---|
+| **Soft Sky** | A cool page on a deep violet-blue night. The default. |
+| **Slate** | Warm text and a copper accent on the quietest grey. |
+| **Deep Water** | Blues and teals, deep. |
+| **Pine** | Green-black, with a lime accent. |
+| **Plum** | Violet glass over violet folds, with a cyan accent. |
+| **Umber** | Warm darks, a terracotta accent. |
+| **Linen** | A light page on warm, pale folds. |
+| **Desktop** | The wallpaper, blurred, behind the glass — the way the first versions looked. |
 
-The quiet sets are three colours each, near each other on the wheel and kept deep — one sky, one water, one wood — rather than a spill of everything; the bolder sets from before are still under Behind the glass for anyone who likes them.
+The dark looks keep their folds deep: three colours each, near each other on the wheel, so a look reads as one sky, one water, one wood rather than a spill of everything.
+
+<Frame caption="Linen: a launch checklist on a light page.">
+  <img src="/images/light.jpg" alt="Glassine in a light look" />
+</Frame>
+
+## Following the system
+
+Settings → Look → Appearance. *Always the chosen look* keeps whatever you picked. *Follow the system* takes one light look and one dark look — Linen and Soft Sky to begin with — and switches between them when macOS does.
 
 ## Your own
 
-Make the page look the way you want — a theme of yours or a built-in one, a set of colours of your own or Desktop, the frost and grain to taste — and press **Save this look…**. Name it, or take the suggested name (*Midnight over Soft Sky*), and it joins *Mine*: a tile like the others, in the View menu and the command bar with the others. **Save a copy…** on a built-in look is the way to start from one. **Delete** removes a look of yours; the theme and the backdrop it used stay.
+Built-in looks cannot be edited, but any of them can be the starting point.
+
+<Steps>
+  <Step title="Duplicate">
+    Click the tile closest to what you want and press **Duplicate**. A copy appears under *Mine*, goes on at once, and everything under it unlocks.
+  </Step>
+  <Step title="Change, and watch">
+    Everything you change is live in the window behind the card — every colour, the glass, the folds — so you can judge it on your own text. A look of yours is edited in place; there is nothing to save.
+  </Step>
+  <Step title="Name it, or let it go">
+    The name is the first row. **Delete** removes a look of yours.
+  </Step>
+</Steps>
+
+### What you can change
+
+**Name**, and whether it is a **dark appearance** — a dark page over deep folds, or a light page over pale ones. (This also decides the GitHub Review style's colours, and which slot the look fills when following the system.)
+
+**The page.** Nine colours: Text, Headings, Accent, Markdown syntax, Quotes, Code, Links, Caret and Selection. The accent is the most visible: it colours tags, date capsules, task boxes, the star, the selected sidebar row and, unless you set one, the caret. Then the glass the page is set in — its **material**, from a list:
+
+| Material |  |
+|---|---|
+| Soft glass | The standard window blur |
+| Deep glass | Darker and blurrier |
+| Sidebar glass | The blur macOS uses for sidebars |
+| Thin glass | Lets more of the desktop through |
+| Frosted | A light haze |
+| Opaque | No blur at all; the tint colour, solid |
+
+Then the **tint** colour, **tint strength** (how much of the blur it covers), and **sidebar tint** (how strongly the sidebar's own darker tint is applied).
+
+**Behind the glass.** *Folds of colour* or *The desktop*. The folds are a set of three to five colours, in wells: change any, remove one (down to three) or add one (up to five). All of them are on screen at once — the folds run round the set in this order, so each colour has folds of its own. Hue and saturation are what count; the first colour also tints the ground.
+
+Every backdrop takes its lightness from the theme, and is built dark first: on a dark theme the ground is close to black and the colour lives in the folds, deep rather than bright, so pale text stays readable over every part of it; a light theme gets the same folds as a pale morning. The theme's tint and grain still lie over it, and the sidebar is a veil over it.
+
+The folds are drawn by a small program on the graphics processor — a field of noise warped through itself, read as bands and lit — at a quarter of the window's size, since there is nothing sharp in them, so they cost the writing nothing.
+
+**Drift** moves the folds, slowly — the picture a few minutes from now is a different one, but no moment of it moves enough to catch the eye. Twenty frames a second while the window can be seen, none while it is covered. Off under Reduce Motion, and off with the switch: a still picture then.
+
+**Frost** pales and softens the colour, the way frosted glass does — gently at first, since a little haze goes a long way over a dark ground, and all the way at 100%: at 0 the folds are as deep as they get; at 30%, the default, they are barely touched; at 100% they are a soft tint under a veil of light, their edges gone.
+
+**Paper grain** lies over the folds the way a theme's grain lies over the desktop's blur — a fine, still texture that keeps the colour from looking like a render. It is a setting of its own here rather than the theme's, since silk wants more of it than glass: 8% is the default, against the themes' 4 or 5.
+
+With the desktop behind the glass instead, the window is a blur of whatever is behind it — the wallpaper, and the windows behind — under the page's own **paper grain**.
 
 ## Sharing a look
 
-**Export…** writes the look on screen — the named one, or the page as it stands — to a file, `Name.glassinelook.json`, with its theme and its backdrop inside it whole, so the file is everything the look needs whatever is on the other Mac. **Import…** reads one: the theme and the backdrop join *Mine* (unless a built-in one is the same, in which case that is used), the look joins *Mine*, and the page puts it on. A theme by itself still exports and imports under The page, for anyone who wants only that.
+**Export…** writes the look on screen to a file, `Name.glassinelook.json`, with everything it needs inside — the page's colours and glass, and the folds — so the file is the whole look whatever is on the other Mac. **Import…** reads one: it joins *Mine* and goes on at once. A file is easy to keep in a dotfiles repo, send to someone, or post.
+
+## Before looks
+
+Until October 2026 the page's colours (a *theme*) and what lay behind the glass (a *backdrop*) were two settings, chosen apart. Anything you made then is still here: each custom theme and each custom set became a look of its own in *Mine* on the first launch with looks, named as it was, and the pairing you were using became one too if no built-in look matched it. A theme exported in the old format still imports, as a look over the folds of the moment.
