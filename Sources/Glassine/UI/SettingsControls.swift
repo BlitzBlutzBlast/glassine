@@ -476,6 +476,80 @@ struct BackdropSwatch: View {
     }
 }
 
+/// A look as a small picture of the window: the backdrop's folds, and on
+/// them a piece of the page — the theme's glass with a heading, two lines
+/// and the accent — so the pairing is seen whole before it is picked.
+struct LookTile: View {
+    let look: Look
+    let theme: Theme
+    let backdrop: BackdropPreset
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack {
+                    if backdrop.isDesktop {
+                        // The desktop: a plain ground, since there is no telling what will be there.
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(LinearGradient(colors: [Color.primary.opacity(0.12), Color.primary.opacity(0.04)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                    } else {
+                        BackdropSwatch(preset: backdrop, theme: theme)
+                        Color.white.opacity(look.frost * look.frost * (theme.isDark ? 0.10 : 0.4))
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+                    // The page, inset, in the theme's glass.
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .top) {
+                            Text("Aa")
+                                .font(.system(size: 13, weight: .semibold, design: .serif))
+                                .foregroundStyle(Color(nsColor: theme.headingColor))
+                            Spacer(minLength: 0)
+                            Circle().fill(theme.accent.color).frame(width: 6, height: 6).padding(.top, 2)
+                        }
+                        Capsule().fill(theme.text.color.opacity(0.6)).frame(width: 34, height: 2.5)
+                        Capsule().fill(theme.text.color.opacity(0.35)).frame(width: 22, height: 2.5)
+                    }
+                    .padding(7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(theme.tint.color.opacity(backdrop.isDesktop ? theme.tintOpacity : min(0.92, 0.55 + theme.tintOpacity * 0.4)))
+                    )
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(theme.text.color.opacity(0.1), lineWidth: 0.5))
+                    .padding(.horizontal, 12)
+                    .padding(.top, 14)
+                    .padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
+                .frame(height: 66)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(selected ? theme.accent.color : Color.primary.opacity(hovering ? 0.25 : 0.12),
+                                      lineWidth: selected ? 2 : 1)
+                )
+                .scaleEffect(hovering && !selected ? 1.02 : 1)
+                Text(look.name)
+                    .font(.system(size: 11.5, weight: selected ? .medium : .regular))
+                    .lineLimit(1)
+                    .opacity(selected ? 1 : 0.65)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.spring(response: 0.28, dampingFraction: 0.75), value: selected)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(look.name)
+        .help(look.blurb.isEmpty ? "\(theme.name) over \(backdrop.name)" : look.blurb)
+    }
+}
+
 struct BackdropTile: View {
     let preset: BackdropPreset
     let theme: Theme

@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     let settings: AppSettings
     let themes: ThemeStore
     let backdrops = BackdropStore()
+    let looks = LookStore()
     @Published private(set) var library: LibraryStore
     /// The library kept in a GitHub repository of the user's, when it is.
     let sync: SyncEngine
@@ -27,8 +28,13 @@ final class AppState: ObservableObject {
     /// Bumped when ⌥Tab or ⌃Tab finds only one page open, for a nudge of the pips.
     @Published var carouselNudge = 0
     var pageKeyMonitor: Any?
+    var pageMouseMonitor: Any?
     /// The modifier (⌥ or ⌃) that brought the carousel up; letting it go commits.
     var carouselModifier: NSEvent.ModifierFlags?
+    /// Sideways scrolling adds up here until it is a step along the carousel.
+    var carouselScroll: Double = 0
+    /// Where the fanned cards are (Pages.swift).
+    let carouselFramesBox = CarouselFrames()
     @Published var errorMessage: String?
     /// The Craft-style mosaic of every document. Also shown whenever nothing is open.
     @Published var showingGallery: Bool = false
@@ -48,6 +54,17 @@ final class AppState: ObservableObject {
 
     /// The mosaic is what the content area shows (asked for, or nothing is open).
     var galleryOnScreen: Bool { !showingDaily && (showingGallery || document == nil) }
+
+    /// Something is up over the content — Settings, the shortcut sheet, the
+    /// command bar, a prompt, the fanned pages — so the keys and the scroll
+    /// wheel belong to it, not to the view underneath. The views that listen
+    /// for events of their own (the Timelapse's walker, the mosaic's
+    /// navigator) check this first: scrolling the Settings card used to walk
+    /// the corridor behind it instead. The tour is not an overlay: it sits
+    /// beside the page and the page stays yours.
+    var overlayUp: Bool {
+        showingSettings || showingShortcuts || showingCommandBar || pendingPrompt != nil || carousel != nil
+    }
     /// Today's note is the document showing — for the sidebar's Today row.
     var todaysNoteOnScreen: Bool {
         guard !galleryOnScreen, !showingDaily, let doc = document else { return false }
@@ -113,6 +130,128 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Looks
+
+    /// The backdrop behind the glass right now.
+    var backdrop: BackdropPreset { backdrops.preset(id: settings.data.backdrop) }
+
+    /// The look the page is wearing, if it is one of the named ones — nil
+    /// once a theme or a backdrop has been changed under it.
+    var currentLook: Look? {
+        let d = settings.data
+        return looks.all.first { $0.matches(themeID: theme.id, backdropID: d.backdrop, drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain) }
+    }
+
+    /// The page takes on a look: its theme (into the slot it belongs to, when
+    /// the appearance follows the system), its backdrop and its tuning — as
+    /// one change, so ⌘Z takes the whole look back.
+    func applyLook(_ look: Look) {
+        var d = settings.data
+        switch d.appearanceMode {
+        case .fixed: d.themeID = look.themeID
+        case .system: if themes.theme(id: look.themeID).isDark { d.darkThemeID = look.themeID } else { d.lightThemeID = look.themeID }
+        }
+        d.backdrop = look.backdropID
+        d.backdropDrift = look.drift
+        d.backdropFrost = look.frost
+        d.backdropGrain = look.grain
+        settings.data = d
+    }
+
+    /// What the page is wearing, as a look of the user's own under a name.
+    @discardableResult
+    func saveLook(named name: String) -> Look {
+        let d = settings.data
+        let look = Look(id: UUID().uuidString, name: name.trimmingCharacters(in: .whitespaces).isEmpty ? suggestedLookName : name,
+                        themeID: theme.id, backdropID: d.backdrop, drift: d.backdropDrift, frost: d.backdropFrost, grain: d.backdropGrain)
+        looks.add(look)
+        return look
+    }
+
+    /// "Midnight over Soft Sky": a name for the page's look as it stands.
+    var suggestedLookName: String {
+        let b = backdrop
+        return b.isDesktop ? "\(theme.name) over the desktop" : "\(theme.name) over \(b.name)"
+    }
+
+    func deleteLook(_ look: Look) {
+        guard !look.isBuiltIn else { return }
+        looks.delete(look)
+    }
+
+    /// Export…: the look on screen — the named one, or the page as it
+    /// stands — with its theme and backdrop inside, as a .glassinelook file.
+    func exportLook() {
+        let look = currentLook ?? Look(id: UUID().uuidString, name: suggestedLookName, themeID: theme.id, backdropID: settings.data.backdrop,
+                                       drift: settings.data.backdropDrift, frost: settings.data.backdropFrost, grain: settings.data.backdropGrain)
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsOtherFileTypes = true
+        panel.nameFieldStringValue = look.name.sanitizedFileStem + "." + LookFile.fileExtension + ".json"
+        panel.message = "A look is its theme and its backdrop together, in one file anyone with Glassine can open: Settings → Look → Import."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try LookFile.write(look: look, theme: theme, backdrop: backdrop, to: url)
+            showNotice("Exported the look")
+        } catch {
+            errorMessage = "Couldn't export the look: \(error.localizedDescription)"
+        }
+    }
+
+    /// Import…: a .glassinelook file. Its theme and backdrop join Mine unless
+    /// a built-in one is the same; the look joins Mine and goes on at once.
+    func importLook() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsOtherFileTypes = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let file = try LookFile.read(from: url)
+            // The theme: a built-in that is the same (its id and its colours),
+            // else one of the user's, under a fresh id if the file's is taken.
+            var theme = file.theme
+            if let twin = Theme.builtIns.first(where: { $0.id == theme.id }), twinOf(twin, theme) {
+                theme = twin
+            } else {
+                theme.isBuiltIn = false
+                if themes.all.contains(where: { $0.id == theme.id }) {
+                    if let same = themes.custom.first(where: { twinOf($0, theme) }) { theme = same } else { theme.id = UUID().uuidString; themes.update(theme) }
+                } else {
+                    themes.update(theme)
+                }
+            }
+            var backdrop = file.backdrop
+            if let twin = BackdropPreset.builtIns.first(where: { $0.id == backdrop.id || (!$0.colors.isEmpty && $0.colors == backdrop.colors) }) {
+                backdrop = twin
+            } else {
+                backdrop.isBuiltIn = false
+                if backdrops.all.contains(where: { $0.id == backdrop.id }) {
+                    if let same = backdrops.custom.first(where: { $0.colors == backdrop.colors }) { backdrop = same } else { backdrop.id = UUID().uuidString; backdrops.update(backdrop) }
+                } else {
+                    backdrops.update(backdrop)
+                }
+            }
+            var look = file.look
+            look.themeID = theme.id
+            look.backdropID = backdrop.id
+            look.isBuiltIn = false
+            if looks.all.contains(where: { $0.id == look.id }) { look.id = UUID().uuidString }
+            looks.add(look)
+            applyLook(look)
+            showNotice("Imported “\(look.name)”")
+        } catch {
+            errorMessage = "Couldn't import that look: \(error.localizedDescription)"
+        }
+    }
+
+    /// The same theme, whatever it is called: every colour and the glass alike.
+    private func twinOf(_ a: Theme, _ b: Theme) -> Bool {
+        var x = a, y = b
+        x.id = ""; y.id = ""; x.name = ""; y.name = ""; x.isBuiltIn = false; y.isBuiltIn = false
+        return x == y
+    }
+
     /// True while the writer is typing and the pointer has not moved since; the footer
     /// and the sidebar toggle step back so nothing sits in the eye line.
     @Published private(set) var quietWhileTyping = false
@@ -138,6 +277,9 @@ final class AppState: ObservableObject {
     @Published var settingsTab = 0
     /// What is typed into the search field at the top of Settings.
     @Published var settingsQuery = ""
+    /// Which half of the look the Look section shows under its tiles — the
+    /// page, or what lies behind the glass — kept so it reopens as it was.
+    @Published var lookPart: LookPart = .page
     /// Bumped to put the keyboard in that field (⌘F while Settings is up).
     @Published var settingsSearchFocus = 0
     /// The theme as the page draws it: over a backdrop, a light theme's quiet
@@ -166,8 +308,20 @@ final class AppState: ObservableObject {
         settings.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         themes.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         backdrops.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        looks.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         sync.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         bindLibrary()
+
+        // A set of the user's own that is now built in (Soft Sky, say) is the
+        // built-in one from here on, wherever it was pointed at.
+        let absorbed = backdrops.absorbBuiltIns()
+        if !absorbed.isEmpty {
+            if let moved = absorbed[settings.data.backdrop] { settings.data.backdrop = moved }
+            for look in looks.custom {
+                if let moved = absorbed[look.backdropID] { var l = look; l.backdropID = moved; looks.update(l) }
+            }
+        }
+        looks.prune(themes: themes, backdrops: backdrops)
 
         bootstrapLibrary()
         startPolling()
@@ -242,7 +396,7 @@ final class AppState: ObservableObject {
         switch UserDefaults.standard.string(forKey: "glassine.launchView") {
         case "review": if document != nil { reviewMode = true }
         case "daily": showDaily()
-        case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.backdrop.index
+        case "backdrops": showingSettings = true; settingsTab = SettingsOverlay.Pane.look.index; lookPart = .behind
         case "trash": trashCurrentDocument()   // the "Move to the Trash?" sheet, for a picture of it
         case "tour": showingTour = true
         case "carousel":
@@ -252,7 +406,8 @@ final class AppState: ObservableObject {
         case let view? where view.hasPrefix("settings"):
             showingSettings = true
             let name = view.split(separator: ":").dropFirst().first.map(String.init) ?? ""
-            settingsTab = (SettingsOverlay.Pane(rawValue: name) ?? .type).index
+            settingsTab = (SettingsOverlay.Pane.named(name) ?? .type).index
+            if name == "backdrop" || name == "backdrops" { lookPart = .behind }
             if let q = UserDefaults.standard.string(forKey: "glassine.settingsQuery") { settingsQuery = q }
         default: break
         }
@@ -380,28 +535,33 @@ final class AppState: ObservableObject {
     /// Every word of the query has to appear somewhere in the title, tags or text
     /// (case- and accent-insensitive). Title matches come first, then the rest in the usual order.
     private struct SearchMemo {
-        let query: String, tag: String?, sort: SortMode, generation: Int, liveID: String?, liveEdit: Int
+        let query: String, tag: String?, day: Int?, sort: SortMode, generation: Int, liveID: String?, liveEdit: Int
         let result: [DocumentRef]
     }
     private var searchMemo: SearchMemo?
 
     var filteredDocuments: [DocumentRef]? {
         let q = searchText.trimmingCharacters(in: .whitespaces)
-        guard tagFilter != nil || !q.isEmpty else { return nil }
-        if let memo = searchMemo, memo.query == q, memo.tag == tagFilter, memo.sort == settings.data.sortDocumentsBy,
+        guard tagFilter != nil || dayFilter != nil || !q.isEmpty else { return nil }
+        if let memo = searchMemo, memo.query == q, memo.tag == tagFilter, memo.day == dayFilter, memo.sort == settings.data.sortDocumentsBy,
            memo.generation == library.generation, memo.liveID == document?.relativePath,
            memo.liveEdit == (document?.editGeneration ?? -1) {
             return memo.result
         }
         let result = computeFilteredDocuments(query: q)
-        searchMemo = SearchMemo(query: q, tag: tagFilter, sort: settings.data.sortDocumentsBy, generation: library.generation,
+        searchMemo = SearchMemo(query: q, tag: tagFilter, day: dayFilter, sort: settings.data.sortDocumentsBy, generation: library.generation,
                                 liveID: document?.relativePath, liveEdit: document?.editGeneration ?? -1, result: result)
         return result
     }
 
     private func computeFilteredDocuments(query q: String) -> [DocumentRef] {
-        let base: [DocumentRef]
-        if let tag = tagFilter {
+        var base: [DocumentRef]
+        if let day = dayFilter {
+            // A day's wall keeps the day's order: the note first, then by last edit.
+            base = documents(onDay: day)
+            if let tag = tagFilter { base = base.filter { $0.tags.contains(tag) } }
+            guard !q.isEmpty else { return base }
+        } else if let tag = tagFilter {
             base = library.allDocuments.filter { $0.tags.contains(tag) }
         } else {
             base = library.allDocuments
@@ -429,6 +589,7 @@ final class AppState: ObservableObject {
     func focusSearch() {
         showingDaily = false
         showingCommandBar = false
+        dayFilter = nil
         if document != nil { showingGallery = true }
         // ⌘F while the bar is still on its way back, or gone a moment ago:
         // a fresh overlay comes out from home; the old one finishes fading.
@@ -477,7 +638,25 @@ final class AppState: ObservableObject {
         dropSearch()
         showingCommandBar = false
         reviewMode = false
+        dayFilter = nil
         showingDaily = true
+    }
+
+    /// Esc on the Timelapse: All Documents — and Esc there comes back here.
+    /// The two overviews trade places, so each is one key from the other.
+    func escapeFromTimelapse() {
+        showingDaily = false
+        dayFilter = nil
+        showingGallery = true
+    }
+
+    /// Esc on All Documents, once a search, a tag or a day has been cleared:
+    /// the Timelapse.
+    func escapeFromGallery() {
+        if !searchText.isEmpty { searchText = ""; return }
+        if tagFilter != nil { tagFilter = nil; return }
+        if dayFilter != nil { dayFilter = nil; return }
+        showDaily()
     }
 
     func toggleCommandBar() {
@@ -819,6 +998,69 @@ final class AppState: ObservableObject {
         return notes
     }
 
+    // MARK: - Days
+
+    /// What was written on each day: the documents created or last edited
+    /// then, with the day's note first and the rest by their last edit —
+    /// keyed by `DailyNotes.dayKey`, as of the last scan. The Timelapse's
+    /// Everything scope and the calendar's day view both read it; the Shelf
+    /// stays out, as it does everywhere but search.
+    private var dayMemo: (generation: Int, days: [Int: [DocumentRef]]) = (-1, [:])
+    var documentsByDay: [Int: [DocumentRef]] {
+        if dayMemo.generation == library.generation { return dayMemo.days }
+        let notes = dailyNotesByDay
+        var days: [Int: [DocumentRef]] = [:]
+        var seen: [Int: Set<String>] = [:]
+        func put(_ doc: DocumentRef, on key: Int) {
+            guard key > 20000101 else { return }   // a file with no date to speak of
+            if seen[key, default: []].insert(doc.id).inserted { days[key, default: []].append(doc) }
+        }
+        for (key, note) in notes { put(note, on: key) }
+        for doc in activeDocuments {
+            put(doc, on: DailyNotes.dayKey(doc.modified))
+            put(doc, on: DailyNotes.dayKey(doc.created))
+        }
+        for (key, list) in days {
+            days[key] = list.sorted { a, b in
+                let an = notes[key]?.id == a.id, bn = notes[key]?.id == b.id
+                if an != bn { return an }
+                return a.modified > b.modified
+            }
+        }
+        dayMemo = (library.generation, days)
+        return days
+    }
+
+    /// The documents of one day, the note first; none for a day nothing was written.
+    func documents(onDay key: Int) -> [DocumentRef] { documentsByDay[key] ?? [] }
+
+    /// A day picked in the sidebar's calendar — the mosaic narrowed to what
+    /// was written that day (`DailyNotes.dayKey`). Cleared by All Documents,
+    /// the Timelapse, a search, or the ✕ beside the day's name.
+    @Published var dayFilter: Int?
+
+    /// The day's wall: every document written on that day, as cards, with
+    /// the day's note (or the way to start it) at the top.
+    func showDay(_ date: Date) {
+        dropSearch()
+        showingCommandBar = false
+        reviewMode = false
+        searchText = ""
+        tagFilter = nil
+        dayFilter = DailyNotes.dayKey(date)
+        showingDaily = false
+        showingGallery = true
+    }
+
+    /// The date a day key stands for, at the start of the day.
+    static func date(forDayKey key: Int) -> Date {
+        var c = DateComponents()
+        c.year = key / 10000
+        c.month = (key / 100) % 100
+        c.day = key % 100
+        return Calendar.current.date(from: c) ?? Date()
+    }
+
     /// File → Export as PDF…: the document in the current Review style, paginated.
     func exportPDF() {
         guard let doc = document else { return }
@@ -1066,6 +1308,7 @@ final class AppState: ObservableObject {
     /// while it is already up, it stays up — a view that closed when picked
     /// again put people in a document they had not chosen. Esc is the way back.
     func showGallery() {
+        dayFilter = nil
         if showingDaily { showingDaily = false; showingGallery = true; return }
         if galleryOnScreen { return }
         if document == nil { showingGallery = true; return }
@@ -1247,17 +1490,24 @@ final class AppState: ObservableObject {
         } else if galleryOnScreen || showingDaily {
             add("new-doc", "New Document", keys: "⌘N") { [weak self] in self?.newDocument() }
             add("today", "Today's Note", keys: "⌘3  ⌘D") { [weak self] in self?.openTodaysNote() }
-            add("daily", showingDaily ? "All Documents" : "Timelapse", keys: showingDaily ? "⌘P" : "⌘2") { [weak self] in
+            add("daily", showingDaily ? "All Documents" : "Timelapse", keys: showingDaily ? "⌘1  Esc" : "⌘2  Esc") { [weak self] in
                 guard let self else { return }
                 if self.showingDaily { self.showGallery() } else { self.showDaily() }
             }
-            for mode in SortMode.allCases {
-                let mark = settings.data.sortDocumentsBy == mode ? "  ✓" : ""
-                add("sort-\(mode.rawValue)", "Sort by \(mode.label.lowercased())\(mark)") { [weak self] in self?.settings.data.sortDocumentsBy = mode }
+            if showingDaily {
+                let everything = settings.data.timelapseScope == .everything
+                add("scope", everything ? "Timelapse: the daily notes alone" : "Timelapse: everything, day by day", keys: "⇥") { [weak self] in
+                    self?.settings.data.timelapseScope = everything ? .notes : .everything
+                }
+            } else {
+                for mode in SortMode.allCases {
+                    let mark = settings.data.sortDocumentsBy == mode ? "  ✓" : ""
+                    add("sort-\(mode.rawValue)", "Sort by \(mode.label.lowercased())\(mark)") { [weak self] in self?.settings.data.sortDocumentsBy = mode }
+                }
             }
             add("search", "Search", keys: "⌘F") { [weak self] in self?.focusSearch() }
-            if document != nil {
-                add("back", "Back to Document", keys: "Esc") { [weak self] in
+            if let doc = document, let ref = library.document(withID: doc.relativePath) {
+                add("back", "Back to “\(ref.title)”") { [weak self] in
                     self?.showingDaily = false
                     self?.showingGallery = false
                 }
@@ -1291,6 +1541,11 @@ final class AppState: ObservableObject {
             add("search", "Search", keys: "⌘F") { [weak self] in self?.focusSearch() }
         }
 
+        let wearing = currentLook?.id
+        for l in looks.all {
+            let mark = wearing == l.id ? "  ✓" : ""
+            add("look-\(l.id)", "Look: \(l.name)\(mark)") { [weak self] in self?.applyLook(l) }
+        }
         for t in themes.all {
             let mark = theme.id == t.id ? "  ✓" : ""
             add("theme-\(t.id)", "Theme: \(t.name)\(mark)") { [weak self] in self?.chooseTheme(t.id) }
@@ -1380,7 +1635,7 @@ enum WelcomeDocument {
 
     ## The window
 
-    The colour behind this page is a backdrop: Aurora, the theme's own colours, drifting slowly. Ten come built in, any of them can be copied and recoloured, and Desktop puts your wallpaper back — **Settings → Behind the glass**, or the Backdrop menu under View. Themes are under **View → Theme**; Dusk is the default, and Settings has an editor for making your own.
+    The colour behind this page is a backdrop — Soft Sky, three deep colours drifting slowly — and the page over it is a theme, Midnight. Together they are a look. **Settings → Look** has eight to pick from, and whatever you make of them — another theme, a set of colours of your own, the desktop instead — can be saved as a look, and exported as a file for another Mac or another person.
 
     ## A few things to try
 

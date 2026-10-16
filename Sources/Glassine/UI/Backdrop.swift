@@ -24,6 +24,7 @@ struct BackdropPreset: Codable, Identifiable, Hashable {
 
     static let desktopID = "desktop"
     static let auroraID = "aurora"
+    static let softSkyID = "softsky"
     static let minColors = 3
     static let maxColors = 5
 
@@ -50,6 +51,13 @@ struct BackdropPreset: Codable, Identifiable, Hashable {
         switch id {
         case BackdropPreset.desktopID: return "No backdrop: the window is a blur of whatever is behind it — the desktop, or the windows behind."
         case BackdropPreset.auroraID: return "The theme's own colours — its tint and its accent, and hues either side of them — run through the folds. Changes with the theme."
+        case BackdropPreset.softSkyID: return "Violet, indigo and a cold blue, kept deep: three near neighbours, so the folds read as one night sky rather than a spill."
+        case "slate": return "Cool greys, barely blue. The quietest set."
+        case "deepwater": return "Blue, teal and a touch of indigo, deep and near each other."
+        case "pine": return "Green and blue-green, deep, with a little moss."
+        case "plum": return "Violet, mauve and a cool purple, deep."
+        case "umber": return "Warm darks: brown, ochre and a dull red."
+        case "linen": return "Warm, pale and quiet — for a light theme."
         case "dusk": return "Indigo, cobalt and violet, with a thread of magenta."
         case "nebula": return "Magenta, indigo and teal."
         case "ocean": return "Navy, cyan and teal, with a touch of violet."
@@ -73,6 +81,27 @@ struct BackdropPreset: Codable, Identifiable, Hashable {
 
     static let desktop = BackdropPreset(id: desktopID, name: "Desktop", colors: [], isBuiltIn: true)
     static let aurora = BackdropPreset(id: auroraID, name: "Aurora", colors: [], isBuiltIn: true)
+
+    // The quiet sets, Soft Sky first: three colours each, near neighbours on
+    // the wheel, and dark — the shader lifts a colour to its floor and no
+    // further, so these sit at the bottom of the range, where a set reads as
+    // one sky, one water, one wood rather than a spill of everything. Soft
+    // Sky is the set the app comes with, in its author's own colours.
+    static let softSky = BackdropPreset(id: softSkyID, name: "Soft Sky", isBuiltIn: true,
+                                        hex: ["#0C0913", "#141122", "#040D11"])
+    static let slate = BackdropPreset(id: "slate", name: "Slate", isBuiltIn: true,
+                                      quiet: [(215, 0.2), (232, 0.15), (200, 0.22)])
+    static let deepWater = BackdropPreset(id: "deepwater", name: "Deep Water", isBuiltIn: true,
+                                          quiet: [(206, 0.7), (190, 0.6), (228, 0.55)])
+    static let pine = BackdropPreset(id: "pine", name: "Pine", isBuiltIn: true,
+                                     quiet: [(160, 0.5), (178, 0.55), (142, 0.42)])
+    static let plum = BackdropPreset(id: "plum", name: "Plum", isBuiltIn: true,
+                                     quiet: [(292, 0.45), (322, 0.4), (268, 0.5)])
+    static let umber = BackdropPreset(id: "umber", name: "Umber", isBuiltIn: true,
+                                      quiet: [(22, 0.45), (36, 0.4), (4, 0.4)])
+    static let linen = BackdropPreset(id: "linen", name: "Linen", isBuiltIn: true,
+                                      quiet: [(40, 0.25), (28, 0.2), (52, 0.18)])
+
     static let dusk = BackdropPreset(id: "dusk", name: "Dusk", isBuiltIn: true,
                                      hues: [(250, 0.8), (218, 0.85), (282, 0.75), (312, 0.6), (262, 0.7)])
     static let nebula = BackdropPreset(id: "nebula", name: "Nebula", isBuiltIn: true,
@@ -91,7 +120,12 @@ struct BackdropPreset: Codable, Identifiable, Hashable {
                                      hues: [(340, 0.7), (20, 0.65), (300, 0.5), (5, 0.7), (330, 0.6)])
     static let graphite = BackdropPreset(id: "graphite", name: "Graphite", isBuiltIn: true,
                                          hues: [(220, 0.08), (240, 0.06), (200, 0.08), (260, 0.06), (230, 0.05)])
-    static let builtIns: [BackdropPreset] = [desktop, aurora, dusk, nebula, ocean, borealis, ember, sunset, moss, rose, graphite]
+    static let builtIns: [BackdropPreset] = [
+        desktop, aurora, softSky, slate, deepWater, pine, plum, umber, linen,
+        dusk, nebula, ocean, borealis, ember, sunset, moss, rose, graphite,
+    ]
+    /// The quiet sets — the ones a new copy offers first.
+    static let quietIDs: Set<String> = ["softsky", "slate", "deepwater", "pine", "plum", "umber", "linen"]
 
     init(id: String, name: String, colors: [HexColor], isBuiltIn: Bool = false) {
         self.id = id
@@ -102,6 +136,15 @@ struct BackdropPreset: Codable, Identifiable, Hashable {
 
     private init(id: String, name: String, isBuiltIn: Bool, hues: [(CGFloat, CGFloat)]) {
         self.init(id: id, name: name, colors: hues.map { BackdropPreset.hsb($0.0, $0.1) }, isBuiltIn: isBuiltIn)
+    }
+
+    /// A quiet set: the colours at the bottom of the lightness range.
+    private init(id: String, name: String, isBuiltIn: Bool, quiet: [(CGFloat, CGFloat)]) {
+        self.init(id: id, name: name, colors: quiet.map { BackdropPreset.hsb($0.0, $0.1, 0.12) }, isBuiltIn: isBuiltIn)
+    }
+
+    private init(id: String, name: String, isBuiltIn: Bool, hex: [String]) {
+        self.init(id: id, name: name, colors: hex.map { HexColor($0) }, isBuiltIn: isBuiltIn)
     }
 
     func renamed(_ newName: String) -> BackdropPreset {
@@ -167,6 +210,22 @@ final class BackdropStore: ObservableObject {
 
     func delete(_ preset: BackdropPreset) {
         custom.removeAll { $0.id == preset.id }
+    }
+
+    /// A set of the user's own whose colours a built-in set now has — Soft
+    /// Sky was one before it came built in — is the built-in one from here
+    /// on: the copy goes, and whatever pointed at it is told where to point.
+    /// Returns old id → built-in id for each set absorbed.
+    func absorbBuiltIns() -> [String: String] {
+        var moved: [String: String] = [:]
+        for preset in custom {
+            if let twin = BackdropPreset.builtIns.first(where: { !$0.colors.isEmpty && $0.colors == preset.colors }) {
+                moved[preset.id] = twin.id
+            }
+        }
+        guard !moved.isEmpty else { return [:] }
+        custom = custom.filter { moved[$0.id] == nil }
+        return moved
     }
 
     private func persist() {

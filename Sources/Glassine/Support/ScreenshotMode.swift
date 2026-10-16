@@ -274,6 +274,15 @@ enum ScreenshotMode {
         case "prev": app.switchToPreviousPage()
         case "gallery": app.showGallery()
         case "daily": app.showDaily()
+        case "day": if let k = Int(arg) { app.showDay(AppState.date(forDayKey: k)) }   // a day's wall, by its key (20261015)
+        case "scope": app.settings.data.timelapseScope = arg == "everything" ? .everything : .notes
+        case "look": if let l = app.looks.look(id: arg) { app.applyLook(l) }
+        case "hover":
+            // The pointer moved to a point in the window, in points from its top left.
+            let parts = arg.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 2, let window = mainWindow() {
+                post(.mouseMoved, at: NSPoint(x: parts[0], y: window.frame.height - parts[1]), in: window)
+            }
         case "walk": TimelineWalker.current?.walk(by: Double(arg) ?? 1)
         case "esc": app.escapeFromEditor()
         case "review": app.toggleReview()

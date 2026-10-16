@@ -5,8 +5,10 @@ import SwiftUI
 /// shows, and nothing else. A heavy day is full accent; a few lines are a
 /// tint; a day without a note is bare. Today is ringed. The note being
 /// written is counted as it is typed, so today's cell deepens under the
-/// writing. Click a day to open its note, or to start it; ‹ and › turn the
-/// month, and *today* comes back to this one.
+/// writing. A dot under the number marks a day other documents were written
+/// on. Click a day for its wall — everything written that day, as cards —
+/// or right-click for its note; ‹ and › turn the month, and *today* comes
+/// back to this one.
 ///
 /// The shading is against your own habit, not the month's biggest day: a
 /// day is full once it reaches your usual heavy day (the 85th percentile
@@ -109,8 +111,10 @@ struct SidebarCalendar: View {
 
     private func grid(liveDay: Int?, liveWords: Int) -> some View {
         let notes = state.dailyNotesByDay
+        let byDay = state.documentsByDay
         let reference = Self.reference(notes, liveDay: liveDay, liveWords: liveWords)
         let today = DailyNotes.dayKey(Date())
+        let shownDay = state.galleryOnScreen ? state.dayFilter : nil
         let (cells, rows) = Self.monthCells(for: month)
         return VStack(spacing: Self.gap) {
             weekdayRow
@@ -123,12 +127,13 @@ struct SidebarCalendar: View {
                                     let key = cell.key
                                     let words = key == liveDay ? liveWords : (notes[key]?.words ?? 0)
                                     let hasNote = key == liveDay || notes[key] != nil
-                                    DayCell(day: cell.day, words: words, hasNote: hasNote,
+                                    let others = (byDay[key]?.count ?? 0) - (notes[key] == nil ? 0 : 1)
+                                    DayCell(day: cell.day, words: words, hasNote: hasNote, others: max(0, others),
                                             intensity: hasNote ? Self.intensity(words, reference: reference) : 0,
-                                            isToday: key == today, isOpen: key == liveDay, isFuture: key > today,
-                                            title: cell.title, theme: theme) {
-                                        state.openNote(for: cell.date)
-                                    }
+                                            isToday: key == today, isOpen: key == liveDay || key == shownDay, isFuture: key > today,
+                                            title: cell.title, theme: theme,
+                                            action: { state.showDay(cell.date) },
+                                            openNote: { state.openNote(for: cell.date) })
                                 } else {
                                     Color.clear
                                         .frame(maxWidth: .infinity)
@@ -219,10 +224,15 @@ private struct LiveWords<Content: View>: View {
     var body: some View { content(doc.wordCount) }
 }
 
+/// One day: shaded by its note, a dot under the number when other documents
+/// were written that day. A click opens the day's wall — every document of
+/// the day as cards, the note at the top; the menu goes to the note itself.
 private struct DayCell: View {
     let day: Int
     let words: Int
     let hasNote: Bool
+    /// Documents of the day besides its note.
+    var others: Int = 0
     let intensity: Double
     let isToday: Bool
     let isOpen: Bool
@@ -230,6 +240,7 @@ private struct DayCell: View {
     let title: String
     let theme: Theme
     let action: () -> Void
+    var openNote: (() -> Void)? = nil
     @State private var hovering = false
 
     var body: some View {
@@ -243,6 +254,14 @@ private struct DayCell: View {
             Text("\(day)")
                 .font(.system(size: 10.5, weight: hasNote || isToday ? .medium : .regular, design: .rounded))
                 .foregroundStyle(digit)
+            if others > 0 {
+                Circle()
+                    .fill(digit.opacity(hasNote && intensity > 0.5 ? 0.7 : 0.55))
+                    .frame(width: 3, height: 3)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 3)
+                    .transition(.scale.combined(with: .opacity))
+            }
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
@@ -252,6 +271,12 @@ private struct DayCell: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        .contextMenu {
+            Button("Open the Day") { action() }
+            if let openNote {
+                Button(hasNote ? "Open the Day's Note" : "Start the Day's Note") { openNote() }
+            }
+        }
         .help(help)
     }
 
@@ -274,7 +299,10 @@ private struct DayCell: View {
     }
 
     private var help: String {
-        if hasNote { return "\(title) — \(words) word\(words == 1 ? "" : "s")" }
-        return isFuture ? "\(title) — start its note" : "\(title) — no note; click to start one"
+        var parts: [String] = [title]
+        if hasNote { parts.append("\(words) word\(words == 1 ? "" : "s") in its note") }
+        if others > 0 { parts.append("\(others) other document\(others == 1 ? "" : "s")") }
+        if !hasNote && others == 0 { parts.append(isFuture ? "nothing yet" : "nothing written") }
+        return parts.joined(separator: " — ") + ". Click for the day; right-click for its note."
     }
 }

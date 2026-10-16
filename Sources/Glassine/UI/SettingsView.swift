@@ -19,7 +19,7 @@ struct SettingsOverlay: View {
 
     /// The sections, in the order ⇥ walks them.
     enum Pane: String, CaseIterable, Identifiable {
-        case library, type, caret, modes, typing, theme, backdrop, about
+        case library, type, caret, modes, typing, look, about
 
         var id: String { rawValue }
         var index: Int { Pane.allCases.firstIndex(of: self) ?? 0 }
@@ -29,6 +29,14 @@ struct SettingsOverlay: View {
             return allCases[((i % n) + n) % n]
         }
 
+        /// A pane by name — the old names of the two halves of Look included,
+        /// for the launch arguments and links that still use them.
+        static func named(_ name: String) -> Pane? {
+            if let p = Pane(rawValue: name) { return p }
+            if name == "theme" || name == "backdrop" || name == "backdrops" || name == "themes" { return .look }
+            return nil
+        }
+
         var label: String {
             switch self {
             case .library: return "Library"
@@ -36,8 +44,7 @@ struct SettingsOverlay: View {
             case .caret: return "Caret"
             case .modes: return "Modes"
             case .typing: return "Typing"
-            case .theme: return "Theme"
-            case .backdrop: return "Behind the glass"
+            case .look: return "Look"
             case .about: return "About"
             }
         }
@@ -49,8 +56,7 @@ struct SettingsOverlay: View {
             case .caret: return "character.cursor.ibeam"
             case .modes: return "scope"
             case .typing: return "keyboard"
-            case .theme: return "paintpalette"
-            case .backdrop: return "water.waves"
+            case .look: return "paintpalette"
             case .about: return "info.circle"
             }
         }
@@ -63,8 +69,7 @@ struct SettingsOverlay: View {
             case .caret: return "How it moves, blinks and looks — and what it gets up to when you stop."
             case .modes: return "Typewriter scrolling, focus, and the counter."
             case .typing: return "What the Mac's text services do as you write."
-            case .theme: return "The glass, and the colours of everything on it."
-            case .backdrop: return "The desktop, or folds of colour inside the window."
+            case .look: return "The page and what lies behind it, chosen together — and kept, or shared, as one."
             case .about: return "This copy of Glassine, and where to read more."
             }
         }
@@ -83,10 +88,8 @@ struct SettingsOverlay: View {
                 return "modes typewriter scrolling re-center click focus mode paragraph sentence unfocused text dimming counter words characters reading time everything"
             case .typing:
                 return "typing smart quotes dashes spelling check correct autocorrect inline predictions continue lists return move finished tasks bottom checkbox"
-            case .theme:
-                return "theme appearance light dark follow the system always chosen material glass tint strength paper grain sidebar colours text headings accent markdown syntax quotes code links caret selection duplicate import export name"
-            case .backdrop:
-                return "behind the glass backdrop desktop aurora silk folds colour drift motion frost paper grain dusk nebula ocean borealis ember sunset moss rose graphite duplicate"
+            case .look:
+                return "look looks appearance theme page light dark follow the system always chosen material glass tint strength paper grain sidebar colours text headings accent markdown syntax quotes code links caret selection duplicate import export share save name file behind the glass backdrop background desktop wallpaper aurora silk folds colour drift motion frost soft sky slate deep water pine plum umber linen dusk nebula ocean borealis ember sunset moss rose graphite midnight sepia frost paper"
             case .about:
                 return "about version build updates check for new versions daily check now sparkle app store manual website source github changelog shortcuts restore defaults reset"
             }
@@ -102,7 +105,7 @@ struct SettingsOverlay: View {
         static let groups: [(title: String, panes: [Pane])] = [
             ("General", [.library]),
             ("Editor", [.type, .caret, .modes, .typing]),
-            ("Themes", [.theme, .backdrop]),
+            ("Appearance", [.look]),
         ]
     }
 
@@ -316,8 +319,7 @@ struct SettingsOverlay: View {
                     case .caret: CaretSection()
                     case .modes: ModesSection()
                     case .typing: TypingSection()
-                    case .theme: ThemeSection()
-                    case .backdrop: BackdropSection()
+                    case .look: LookSection()
                     case .about: AboutSection()
                     }
                 }
@@ -1120,17 +1122,89 @@ struct TypingSection: View {
     }
 }
 
-// MARK: - Theme
+// MARK: - Look
 
-struct ThemeSection: View {
+/// The one section for how the app looks. At the top, the looks: a theme and
+/// a backdrop with its tuning, as one tile — the built-in pairings, then
+/// the user's own, saved from whatever the page is wearing and carried to
+/// another Mac as a file. Under them, the two halves of the look on screen,
+/// a pill apart: the page (the theme and its colours) and what lies behind
+/// the glass (the backdrop, its colours, drift, frost and grain). Change
+/// either and the look's tile lets go; Save keeps the new pairing.
+struct LookSection: View {
     @EnvironmentObject var state: AppState
+    @State private var naming = false
+    @State private var newName = ""
+    @FocusState private var nameFocused: Bool
 
     private var theme: Theme { state.theme }
     private var form: SettingsForm { SettingsForm(state: state) }
     private var data: SettingsData { state.settings.data }
+    private var current: Look? { state.currentLook }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                groupLabel("Looks")
+                LazyVGrid(columns: gridColumns(4), spacing: 12) {
+                    ForEach(Look.builtIns) { l in
+                        LookTile(look: l, theme: state.themes.theme(id: l.themeID), backdrop: state.backdrops.preset(id: l.backdropID),
+                                 selected: current?.id == l.id) { pick(l) }
+                    }
+                }
+                if !state.looks.custom.isEmpty {
+                    groupLabel("Mine").padding(.top, 6)
+                    LazyVGrid(columns: gridColumns(4), spacing: 12) {
+                        ForEach(state.looks.custom) { l in
+                            LookTile(look: l, theme: state.themes.theme(id: l.themeID), backdrop: state.backdrops.preset(id: l.backdropID),
+                                     selected: current?.id == l.id) { pick(l) }
+                        }
+                    }
+                }
+            }
+
+            if naming {
+                HStack(spacing: 8) {
+                    GlassTextField(theme: theme, placeholder: state.suggestedLookName, text: $newName)
+                        .frame(width: 260)
+                        .focused($nameFocused)
+                        .onSubmit(saveNamed)
+                    Button("Save", action: saveNamed)
+                        .buttonStyle(GlassButtonStyle(theme: theme, prominent: true))
+                    Button("Cancel") { withAnimation(.easeOut(duration: 0.15)) { naming = false } }
+                        .buttonStyle(GlassButtonStyle(theme: theme))
+                    Spacer()
+                }
+                .transition(.opacity.combined(with: .offset(y: -4)))
+            } else {
+                HStack(spacing: 8) {
+                    Button(current == nil ? "Save this look…" : "Save a copy…") {
+                        newName = ""
+                        withAnimation(.easeOut(duration: 0.15)) { naming = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { nameFocused = true }
+                    }
+                    .buttonStyle(GlassButtonStyle(theme: theme, prominent: current == nil))
+                    .help(current == nil
+                          ? "The page as it is now — \(state.suggestedLookName) — under a name of its own"
+                          : "A copy of “\(current?.name ?? "")” to change")
+                    Button("Delete") {
+                        guard let l = current, !l.isBuiltIn else { return }
+                        state.deleteLook(l)
+                    }
+                    .buttonStyle(GlassButtonStyle(theme: theme))
+                    .disabled(current?.isBuiltIn ?? true)
+                    .opacity(current?.isBuiltIn ?? true ? 0.4 : 1)
+                    Spacer()
+                    Button("Import…") { state.importLook() }
+                        .buttonStyle(GlassButtonStyle(theme: theme))
+                        .help("A .glassinelook file: its theme and backdrop come with it")
+                    Button("Export…") { state.exportLook() }
+                        .buttonStyle(GlassButtonStyle(theme: theme))
+                        .help("This look — theme, backdrop and tuning — as one file to keep or send")
+                }
+                .transition(.opacity)
+            }
+
             SettingsPanel(theme: theme, title: "Appearance") {
                 form.pills("Theme", \.appearanceMode, options: AppearanceMode.allCases, label: { $0.label },
                            keywords: "light dark follow system automatic")
@@ -1144,18 +1218,93 @@ struct ThemeSection: View {
                 }
             }
 
+            // The two halves of the look on screen.
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    PillPicker(theme: theme, selection: $state.lookPart, options: LookPart.allCases, label: { $0.label })
+                    Spacer()
+                    Text(current.map { "Wearing “\($0.name)”" } ?? "Not one of the named looks — Save keeps it")
+                        .font(.system(size: 11))
+                        .opacity(0.5)
+                        .contentTransition(.opacity)
+                        .animation(.easeOut(duration: 0.18), value: current?.id)
+                }
+                Group {
+                    switch state.lookPart {
+                    case .page: ThemeSection()
+                    case .behind: BackdropSection()
+                    }
+                }
+                .id(state.lookPart)
+                .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+            .animation(.easeOut(duration: 0.18), value: state.lookPart)
+        }
+    }
+
+    private func pick(_ l: Look) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.applyLook(l) }
+    }
+
+    private func saveNamed() {
+        state.saveLook(named: newName)
+        withAnimation(.easeOut(duration: 0.15)) { naming = false }
+    }
+
+    private func themeMenu(dark: Bool, selection: Binding<String>) -> some View {
+        let options = state.themes.all.filter { $0.isDark == dark }
+        let current = options.first { $0.id == selection.wrappedValue } ?? options.first
+        return GlassMenu(theme: theme) {
+            HStack(spacing: 6) {
+                if let current {
+                    Circle().fill(current.accent.color).frame(width: 7, height: 7)
+                }
+                Text(current?.name ?? "—").font(.system(size: 12))
+            }
+        } content: {
+            ForEach(options) { t in
+                Button(t.name) { selection.wrappedValue = t.id }
+            }
+        }
+    }
+}
+
+/// Which half of the look the section shows under the tiles.
+enum LookPart: String, CaseIterable, Identifiable {
+    case page, behind
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .page: return "The page"
+        case .behind: return "Behind the glass"
+        }
+    }
+}
+
+// MARK: - Theme
+
+/// The page's half of a look: the theme, as tiles, and its makings.
+struct ThemeSection: View {
+    @EnvironmentObject var state: AppState
+
+    private var theme: Theme { state.theme }
+    private var form: SettingsForm { SettingsForm(state: state) }
+    private var data: SettingsData { state.settings.data }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
                 groupLabel("Built in")
                 LazyVGrid(columns: gridColumns(5), spacing: 12) {
                     ForEach(Theme.builtIns) { t in
-                        ThemeTile(theme: t, selected: data.themeID == t.id) { pick(t) }
+                        ThemeTile(theme: t, selected: theme.id == t.id) { pick(t) }
                     }
                 }
                 if !state.themes.custom.isEmpty {
                     groupLabel("Mine").padding(.top, 6)
                     LazyVGrid(columns: gridColumns(5), spacing: 12) {
                         ForEach(state.themes.custom) { t in
-                            ThemeTile(theme: t, selected: data.themeID == t.id) { pick(t) }
+                            ThemeTile(theme: t, selected: theme.id == t.id) { pick(t) }
                         }
                     }
                 }
@@ -1177,8 +1326,10 @@ struct ThemeSection: View {
                 .disabled(theme.isBuiltIn)
                 .opacity(theme.isBuiltIn ? 0.4 : 1)
                 Spacer()
-                Button("Import…", action: importTheme).buttonStyle(GlassButtonStyle(theme: theme))
-                Button("Export…", action: exportTheme).buttonStyle(GlassButtonStyle(theme: theme))
+                Button("Import theme…", action: importTheme).buttonStyle(GlassButtonStyle(theme: theme))
+                    .help("A theme on its own (.glassinetheme). A whole look imports above.")
+                Button("Export theme…", action: exportTheme).buttonStyle(GlassButtonStyle(theme: theme))
+                    .help("The theme on its own, without its backdrop. Export above for the whole look.")
             }
 
             ThemeEditor(theme: theme)
@@ -1186,24 +1337,7 @@ struct ThemeSection: View {
     }
 
     private func pick(_ t: Theme) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.settings.data.themeID = t.id }
-    }
-
-    private func themeMenu(dark: Bool, selection: Binding<String>) -> some View {
-        let options = state.themes.all.filter { $0.isDark == dark }
-        let current = options.first { $0.id == selection.wrappedValue } ?? options.first
-        return GlassMenu(theme: theme) {
-            HStack(spacing: 6) {
-                if let current {
-                    Circle().fill(current.accent.color).frame(width: 7, height: 7)
-                }
-                Text(current?.name ?? "—").font(.system(size: 12))
-            }
-        } content: {
-            ForEach(options) { t in
-                Button(t.name) { selection.wrappedValue = t.id }
-            }
-        }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.chooseTheme(t.id) }
     }
 
     private func importTheme() {
@@ -1344,9 +1478,17 @@ struct BackdropSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                groupLabel("Built in")
+                // The quiet sets first — three near colours, deep — then the
+                // bold ones, which run the wheel.
+                groupLabel("Quiet")
                 LazyVGrid(columns: gridColumns(6), spacing: 12) {
-                    ForEach(BackdropPreset.builtIns) { b in
+                    ForEach(BackdropPreset.builtIns.filter { $0.colors.isEmpty || BackdropPreset.quietIDs.contains($0.id) }) { b in
+                        BackdropTile(preset: b, theme: theme, selected: data.backdrop == b.id) { pick(b) }
+                    }
+                }
+                groupLabel("Bold").padding(.top, 6)
+                LazyVGrid(columns: gridColumns(6), spacing: 12) {
+                    ForEach(BackdropPreset.builtIns.filter { !$0.colors.isEmpty && !BackdropPreset.quietIDs.contains($0.id) }) { b in
                         BackdropTile(preset: b, theme: theme, selected: data.backdrop == b.id) { pick(b) }
                     }
                 }
@@ -1372,7 +1514,7 @@ struct BackdropSection: View {
                 Button("Delete") {
                     guard !current.isBuiltIn else { return }
                     state.backdrops.delete(current)
-                    state.settings.data.backdrop = BackdropPreset.dusk.id
+                    state.settings.data.backdrop = BackdropPreset.softSkyID
                 }
                 .buttonStyle(GlassButtonStyle(theme: theme))
                 .disabled(current.isBuiltIn)
@@ -1578,7 +1720,7 @@ struct AboutSection: View {
 
             SettingsPanel(theme: theme, title: "Settings") {
                 SettingRow(theme: theme, title: "Restore defaults",
-                           caption: "Every setting back to how it came, the theme and backdrop too. ⌘Z brings yours back.",
+                           caption: "Every setting back to how it came, the look too. ⌘Z brings yours back.",
                            keywords: "reset factory") {
                     Button("Restore…") {
                         state.settings.data = SettingsData().withBookkeeping(of: state.settings.data)

@@ -6,6 +6,13 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
+## 0.2.26 — October 16, 2026
+
+- **Looks.** The theme and what lies behind the glass are one setting now — a *look* — with eight built in and Soft Sky, deep and quiet, the one the app comes with. Save whatever the page is wearing under a name, and export it as one file, theme and backdrop inside, for another Mac or another person. [Looks.](https://docs.glassine.ink/appearance/looks)
+- **A tour you do.** The first launch asks for one key at a time — [[⌘1]], [[⌘2]], Esc, [[⌘↩]], [[⌥⇥]] — on the real page, and lights up when you have pressed it. About a minute, nothing to read. Help → Tour of Glassine.
+- **The Timelapse, by day and by key.** [[⇥]] switches it from the daily notes alone to everything written each day; ↑ ↓ walk the days, ↩ opens one, Esc goes to All Documents and Esc there comes back. A day in the sidebar's calendar opens that day's wall.
+- **The fanned pages, refined.** The pointer moves the highlight, a click or ↩ opens, 1–9 jump, and the pips in the footer show a picture of their page when the pointer rests on one.
+
 ## 0.2.25 — October 14, 2026
 
 - **⌃Tab too.** Hold ⌃ and press Tab and the open pages fan out, the same as ⌥Tab; ⇧ steps back. Whichever you held, letting it go opens the page.

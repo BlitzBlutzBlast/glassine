@@ -21,6 +21,14 @@ struct SidebarView: View {
 
     private var theme: Theme { state.theme }
 
+    /// What the sidebar lists instead of the tree: a search's or a tag's
+    /// results. A day's wall is the mosaic's business — the calendar stays,
+    /// since it is how the day was reached and how the next one will be.
+    private var sidebarResults: [DocumentRef]? {
+        guard state.tagFilter != nil || !state.searchText.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return state.filteredDocuments
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -35,7 +43,7 @@ struct SidebarView: View {
                     todayRow
                     newDocumentRow
                         .padding(.bottom, 8)
-                    if state.filteredDocuments == nil {
+                    if sidebarResults == nil {
                         SidebarCalendar()
                             .padding(.bottom, 8)
                     }
@@ -44,7 +52,7 @@ struct SidebarView: View {
                         LooseDocumentRow(doc: loose)
                             .padding(.bottom, 8)
                     }
-                    if let filtered = state.filteredDocuments {
+                    if let filtered = sidebarResults {
                         filterHeader
                         if filtered.isEmpty {
                             emptyLabel("Nothing matches")

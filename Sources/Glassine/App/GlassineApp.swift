@@ -406,6 +406,13 @@ struct GlassineCommands: Commands {
             ))
             .keyboardShortcut(".", modifiers: .command)
             Divider()
+            Picker("Look", selection: Binding(
+                get: { state.currentLook?.id ?? "" },
+                set: { id in if let l = state.looks.look(id: id) { state.applyLook(l) } }
+            )) {
+                ForEach(state.looks.all) { l in Text(l.name).tag(l.id) }
+                if state.currentLook == nil { Text(state.suggestedLookName).tag("") }
+            }
             Picker("Theme", selection: Binding(
                 get: { state.theme.id },
                 set: { state.chooseTheme($0) }

@@ -18,9 +18,52 @@ struct GalleryView: View {
     }
 
     private var headerTitle: String {
+        if let day = state.dayFilter { return GalleryView.dayName(day) }
         if let tag = state.tagFilter { return "#\(tag)" }
         if !state.searchText.trimmingCharacters(in: .whitespaces).isEmpty { return "Search" }
         return "All Documents"
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f
+    }()
+
+    /// "Today", "Yesterday", or "Thursday, October 15" — the day's wall by name.
+    static func dayName(_ key: Int) -> String {
+        let date = AppState.date(forDayKey: key)
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        return dayFormatter.string(from: date)
+    }
+
+    /// The day's own note, when the wall is a day's: open it, or start it.
+    @ViewBuilder
+    private var dayNoteButton: some View {
+        if let day = state.dayFilter {
+            let date = AppState.date(forDayKey: day)
+            let note = state.dailyNotesByDay[day]
+            Button {
+                if let note { state.open(note, fromCard: true) } else { state.openNote(for: date) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: note == nil ? "plus" : "sun.max")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(theme.accent.color)
+                    Text(note == nil ? "Start the day's note" : "The day's note")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .padding(.horizontal, 11)
+                .frame(height: 28)
+                .background(Capsule().fill(theme.text.color.opacity(theme.isDark ? 0.07 : 0.05)))
+                .overlay(Capsule().strokeBorder(theme.accent.color.opacity(note == nil ? 0.4 : 0), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(note == nil ? "A note for \(GalleryView.dayName(day)), in the Daily folder" : "Open the note for \(GalleryView.dayName(day))")
+        }
     }
 
     var body: some View {
@@ -77,16 +120,12 @@ struct GalleryView: View {
         .foregroundStyle(theme.text.color)
         .background(WindowTap { nav.window = $0 })
         .background(
-            // Escape works from anywhere in the window, not just when something has focus.
+            // Escape works from anywhere in the window, not just when something
+            // has focus: a search, a tag or a day is cleared first; with the
+            // whole wall showing, Esc goes to the Timelapse, whose Esc comes back.
             Button("") {
-                if !state.searchText.isEmpty {
-                    state.searchText = ""
-                    searchFocused = false
-                } else if state.tagFilter != nil {
-                    state.tagFilter = nil
-                } else if state.document != nil {
-                    state.showingGallery = false
-                }
+                if !state.searchText.isEmpty { searchFocused = false }
+                state.escapeFromGallery()
             }
             .keyboardShortcut(.cancelAction)
             .frame(width: 0, height: 0)
@@ -114,7 +153,9 @@ struct GalleryView: View {
 
     /// Keyboard handling for the mosaic. Returns true when the event was consumed.
     private static func handle(_ event: NSEvent, nav: GalleryNavigator, state: AppState) -> Bool {
-        guard state.galleryOnScreen else { return false }
+        // A card over the wall — Settings, the command bar — has the keys;
+        // Return in a field there is not a card to open.
+        guard state.galleryOnScreen, !state.overlayUp else { return false }
         guard let window = event.window, window === (nav.window ?? NSApp.mainWindow) else { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
         // A text field being edited (the search box) owns a field editor; the document
@@ -175,21 +216,26 @@ struct GalleryView: View {
 
             Text(headerTitle)
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .contentTransition(.opacity)
             Text("\(documents.count)")
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .opacity(0.4)
-            if state.tagFilter != nil {
+                .contentTransition(.numericText())
+            if state.tagFilter != nil || state.dayFilter != nil {
                 Button {
-                    state.tagFilter = nil
+                    if state.dayFilter != nil { state.dayFilter = nil } else { state.tagFilter = nil }
                 } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 13)).opacity(0.45)
                 }
                 .buttonStyle(.plain)
+                .help("Back to every document (Esc)")
             }
+            dayNoteButton
             Spacer()
             gallerySearch
-            SortMenu()
+            if state.dayFilter == nil { SortMenu() }
         }
+        .animation(.easeOut(duration: 0.18), value: state.dayFilter)
     }
 
     private var gallerySearch: some View {
@@ -230,10 +276,12 @@ struct GalleryView: View {
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: "leaf")
+            Image(systemName: state.dayFilter != nil ? "moon.zzz" : "leaf")
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(theme.accent.color.opacity(0.7))
-            Text(state.filteredDocuments != nil ? "Nothing matches" : "No documents yet")
+            Text(state.dayFilter != nil && state.searchText.isEmpty && state.tagFilter == nil
+                 ? "Nothing written that day"
+                 : (state.filteredDocuments != nil ? "Nothing matches" : "No documents yet"))
                 .font(.system(size: 14, weight: .medium, design: .rounded))
                 .opacity(0.6)
             if state.filteredDocuments == nil {
@@ -443,6 +491,10 @@ struct GalleryCard: View {
     var previewCap: CGFloat = GalleryCard.previewCap
     /// A set height for the plate, whatever the document holds; the corridor uses it.
     var fixedHeight: CGFloat? = nil
+    /// Whether this card is the one the page grows out of and shrinks back
+    /// into. The Timelapse can show a document twice — under the day it was
+    /// made and the day it was last edited — and only one of them can be.
+    var zoomSource: Bool = true
     @State private var hovering = false
 
     static let previewCap: CGFloat = 280
@@ -553,7 +605,7 @@ struct GalleryCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
-        .matchedGeometryEffect(id: doc.id, in: zoom)
+        .matchedGeometryEffect(id: doc.id, in: zoom, isSource: zoomSource)
         .onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.72), value: hovering)
         .animation(.easeOut(duration: 0.12), value: isSelected)

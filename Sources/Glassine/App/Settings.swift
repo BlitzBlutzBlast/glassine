@@ -49,6 +49,19 @@ enum SortMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// What a day in the Timelapse holds: its note alone, or everything written
+/// that day — created or last edited then — in a row behind the note.
+enum TimelapseScope: String, Codable, CaseIterable, Identifiable {
+    case notes, everything
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .notes: return "Daily notes"
+        case .everything: return "Everything"
+        }
+    }
+}
+
 enum AppearanceMode: String, Codable, CaseIterable, Identifiable {
     case fixed, system
     var id: String { rawValue }
@@ -150,16 +163,17 @@ struct SettingsData: Codable, Equatable {
     /// What sits behind the glass: the desktop, or folds of colour inside
     /// the window (Backdrop.swift) — the id of a built-in set or one of the
     /// user's own — drifting unless told not to, frosted this much.
-    /// Aurora from the first launch — the theme's own colours behind the
-    /// glass, so the first page looks as the pictures do whatever the
-    /// wallpaper; the desktop's blur is a tile away. Settings saved before
-    /// this default keep whatever they held.
-    var backdrop: String = BackdropPreset.auroraID
+    /// Soft Sky from the first launch, under the Midnight theme — the Soft
+    /// Sky look (Look.swift): deep, three near colours, no spill — so the
+    /// first page looks as the pictures do whatever the wallpaper; the
+    /// desktop's blur is a tile away. Settings saved before this default
+    /// keep whatever they held.
+    var backdrop: String = BackdropPreset.softSkyID
     var backdropDrift: Bool = true
-    var backdropFrost: Double = 0.3
+    var backdropFrost: Double = 0.2
     /// The paper grain over a backdrop — its own, since the theme's is tuned
     /// for the desktop's blur.
-    var backdropGrain: Double = 0.08
+    var backdropGrain: Double = 0.085
     var expandedFolders: [String] = []
     var starred: [String] = []
     /// Where each folder's documents sit when sorted by hand: folder path →
@@ -168,14 +182,16 @@ struct SettingsData: Codable, Equatable {
     var documentOrder: [String: [String]] = [:]
     /// The month calendar under the sidebar's top rows, folded away.
     var calendarCollapsed: Bool = false
+    /// The Timelapse: the daily notes alone, or every document, day by day.
+    var timelapseScope: TimelapseScope = .notes
     var recents: [String: Date] = [:]
     var caretPositions: [String: Int] = [:]
 
-    // Theme
-    var themeID: String = "dusk"
+    // Theme — Midnight, the page of the Soft Sky look
+    var themeID: String = "midnight"
     var appearanceMode: AppearanceMode = .fixed
     var lightThemeID: String = "paper"
-    var darkThemeID: String = "dusk"
+    var darkThemeID: String = "midnight"
 
     // Review mode
     var reviewStyle: ReviewStyle = .glass
@@ -208,6 +224,7 @@ struct SettingsData: Codable, Equatable {
         p.starred = []
         p.documentOrder = [:]
         p.calendarCollapsed = false
+        p.timelapseScope = .notes
         p.recents = [:]
         p.caretPositions = [:]
         p.sidebarVisible = true
@@ -233,6 +250,7 @@ struct SettingsData: Codable, Equatable {
         p.starred = other.starred
         p.documentOrder = other.documentOrder
         p.calendarCollapsed = other.calendarCollapsed
+        p.timelapseScope = other.timelapseScope
         p.recents = other.recents
         p.caretPositions = other.caretPositions
         p.sidebarVisible = other.sidebarVisible
@@ -309,6 +327,7 @@ struct SettingsData: Codable, Equatable {
         starred = try c.decodeIfPresent([String].self, forKey: .starred) ?? d.starred
         documentOrder = try c.decodeIfPresent([String: [String]].self, forKey: .documentOrder) ?? d.documentOrder
         calendarCollapsed = try c.decodeIfPresent(Bool.self, forKey: .calendarCollapsed) ?? d.calendarCollapsed
+        timelapseScope = try c.decodeIfPresent(TimelapseScope.self, forKey: .timelapseScope) ?? d.timelapseScope
         recents = try c.decodeIfPresent([String: Date].self, forKey: .recents) ?? d.recents
         caretPositions = try c.decodeIfPresent([String: Int].self, forKey: .caretPositions) ?? d.caretPositions
         themeID = try c.decodeIfPresent(String.self, forKey: .themeID) ?? d.themeID

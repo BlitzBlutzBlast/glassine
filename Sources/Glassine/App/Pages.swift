@@ -19,6 +19,11 @@ struct PageCarousel: Equatable {
     var order: [String]
     /// The card under the highlight.
     var index: Int
+    /// The card the row is centred on. The keys move it with the highlight;
+    /// the pointer moves the highlight alone, so nothing slides under a
+    /// resting hand — a row that re-centred on hover ran away under the
+    /// pointer, card after card.
+    var anchor: Int
 }
 
 extension AppState {
@@ -104,6 +109,7 @@ extension AppState {
         if var c = carousel {
             guard !c.order.isEmpty else { return }
             c.index = (c.index + (backward ? -1 : 1) + c.order.count) % c.order.count
+            c.anchor = c.index
             carousel = c
             return
         }
@@ -114,7 +120,9 @@ extension AppState {
             return
         }
         showingCommandBar = false
-        carousel = PageCarousel(order: order, index: backward ? order.count - 1 : 1)
+        let start = backward ? order.count - 1 : 1
+        ScreenshotMode.note("carousel up with \(order.count) pages")
+        carousel = PageCarousel(order: order, index: start, anchor: start)
     }
 
     /// The modifier let go: the highlighted page opens.
@@ -143,6 +151,7 @@ extension AppState {
         pages.removeAll { $0 == id }
         settings.data.openPages = pages
         c.index = min(c.index, c.order.count - 1)
+        c.anchor = min(c.anchor, c.order.count - 1)
         carousel = c
     }
 
@@ -150,12 +159,39 @@ extension AppState {
     func pickFromCarousel(_ id: String) {
         guard carousel != nil else { return }
         carousel = nil
+        ScreenshotMode.note("carousel pick \(id)")
         switchToPage(id)
     }
 
+    /// The pointer over a card: the highlight follows it, so letting go of
+    /// the modifier opens the page under the pointer.
+    func hoverCarousel(_ index: Int) {
+        guard var c = carousel, index >= 0, index < c.order.count, c.index != index else { return }
+        c.index = index
+        carousel = c
+    }
+
+    /// A digit while the carousel is up: that card, counted from the left.
+    func jumpCarousel(to index: Int) {
+        guard var c = carousel, index >= 0, index < c.order.count else { return }
+        c.index = index
+        c.anchor = index
+        carousel = c
+    }
+
+    /// Where the fanned cards are, in the window's own coordinates (the root
+    /// space, top-left origin), reported by the carousel as it lays out. A
+    /// click is matched against these by hand: with ⌃ held a click arrives
+    /// as a right click, which no tap gesture hears.
+    var carouselCardFrames: [String: CGRect] {
+        get { carouselFramesBox.frames }
+        set { carouselFramesBox.frames = newValue }
+    }
+
     /// The keys: ⌥Tab or ⌃Tab anywhere in the app (⇧ for backwards); ⌫ and
-    /// Esc while the carousel is up; the modifier let go opens the page. A
-    /// local monitor, so the editor never sees the Tab.
+    /// Esc while the carousel is up; ← → and the digits move the highlight;
+    /// ↩ or a click — either button — opens; the modifier let go opens the
+    /// page. A local monitor, so the editor never sees the Tab.
     func installPageKeys() {
         pageKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
@@ -172,7 +208,8 @@ extension AppState {
                 let held: NSEvent.ModifierFlags? = flags.contains(.option) && !flags.contains(.control) ? .option
                     : flags.contains(.control) && !flags.contains(.option) ? .control : nil
                 if let held {
-                    guard self.keepsPagesOpen, self.pendingPrompt == nil else { return event }
+                    guard self.keepsPagesOpen, self.pendingPrompt == nil, !self.showingSettings, !self.showingShortcuts,
+                          !self.showingCommandBar else { return event }
                     if self.carousel == nil { self.carouselModifier = held }
                     self.stepCarousel(backward: flags.contains(.shift))
                     return nil
@@ -182,13 +219,50 @@ extension AppState {
                 switch event.keyCode {
                 case 53: self.cancelCarousel(); return nil          // Esc
                 case 51, 117: self.closeHighlightedPage(); return nil   // ⌫, ⌦
-                case 123: self.stepCarousel(backward: true); return nil   // ←
-                case 124: self.stepCarousel(backward: false); return nil  // →
-                case 36: self.commitCarousel(); return nil           // ↩
-                default: return nil
+                case 123, 126: self.stepCarousel(backward: true); return nil   // ← ↑
+                case 124, 125: self.stepCarousel(backward: false); return nil  // → ↓
+                case 36, 76, 49: self.commitCarousel(); return nil   // ↩, enter, space
+                default:
+                    // 1–9: straight to that card.
+                    if let ch = event.charactersIgnoringModifiers?.first, let n = ch.wholeNumberValue, n >= 1 {
+                        self.jumpCarousel(to: n - 1)
+                    }
+                    return nil
                 }
             }
             return event
         }
+        // The mouse while the cards are fanned: a press on a card opens it —
+        // the right button too, since ⌃-click is one — a press beside them
+        // leaves things as they were, and a sideways scroll steps along.
+        pageMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
+            guard let self, self.carousel != nil, let window = event.window, AppDelegate.isMainWindow(window),
+                  let content = window.contentView else { return event }
+            if event.type == .scrollWheel {
+                let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+                let delta = abs(dx) >= abs(dy) ? dx : dy
+                self.carouselScroll += Double(delta)
+                if abs(self.carouselScroll) >= 40 {
+                    self.stepCarousel(backward: self.carouselScroll > 0)
+                    self.carouselScroll = 0
+                }
+                if event.phase == .ended || event.momentumPhase == .ended { self.carouselScroll = 0 }
+                return nil
+            }
+            let p = event.locationInWindow
+            let point = CGPoint(x: p.x, y: content.bounds.height - p.y)
+            ScreenshotMode.note("carousel click at \(point)")
+            if let hit = self.carouselCardFrames.first(where: { $0.value.contains(point) }) {
+                self.pickFromCarousel(hit.key)
+            } else {
+                self.cancelCarousel()
+            }
+            return nil
+        }
     }
+}
+
+/// The card frames, in a box so the extension can keep them without a stored property.
+final class CarouselFrames {
+    var frames: [String: CGRect] = [:]
 }

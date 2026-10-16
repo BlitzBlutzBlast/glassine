@@ -100,7 +100,7 @@ New documents start as "Untitled" and take their file name from the first line a
 |---|---|
 | ⌘N / ⌘⇧N | New document / new folder |
 | ⌘1 ⌘2 ⌘3 | The three rows at the top of the sidebar — All Documents, Timelapse, New Document — for the left hand alone while the right is on the mouse |
-| ⌘D | Timelapse — today in front, earlier days receding behind it |
+| ⌘D | Today's note; ⌘2 is Timelapse — today in front, earlier days receding behind it; there, ↑ ↓ walk the days, ↩ opens the one in front, ⇥ switches to everything written each day |
 | ⌥⌘D | Today's note (in a Daily folder, created on first use) |
 | ⌘⇧E | Export the document as a PDF in the current Review style |
 | ⌘/ | The shortcut sheet |
@@ -111,7 +111,7 @@ New documents start as "Untitled" and take their file name from the first line a
 | ⌘⇧↩ | The page beside the editor — Review to the right of the text, redrawn as you write and following the caret |
 | ⌘⇧C / ⌥⌘C | Copy the whole document as Markdown / as rich text |
 | ⌘V / ⌥⇧⌘V | Paste (rich text from anywhere becomes Markdown — lists, headings, bold, links, tables) / paste the plain string as it is |
-| Esc | Zoom out one level: Review → editor → wherever the document was opened from (All Documents, or Timelapse for a note opened from a day there), the page shrinking back into its card. Inside All Documents, Esc returns to the open document |
+| Esc | Zoom out one level: Review → editor → wherever the document was opened from (All Documents, or Timelapse for a note opened from a day there), the page shrinking back into its card. In All Documents, Esc clears a search, a tag or a day first, then goes to the Timelapse; in the Timelapse it goes to All Documents |
 | ↑↓←→ and ↩ | In All Documents: move between cards and open the selected one (⌘↩ opens it in Review) |
 | ⌃⌘T | Typewriter scrolling |
 | ⌃⌘F | Focus mode (paragraph or sentence, pick in Settings). Scrolling lifts the dimming so you can read; the next click or keystroke brings it back where the caret lands |
@@ -129,7 +129,7 @@ New documents start as "Untitled" and take their file name from the first line a
 | ⌘R | Rename |
 | ⌘⇧⌫ | Shelve — out of the sidebar, Recents and All Documents, into the Shelf section at the bottom; Unshelve puts it back where it was |
 | ⌘⌫ | Move to Trash (asks first; it goes to the macOS Trash, so it's recoverable) |
-| ⌥⇥ / ⌥⇧⇥ | Open pages fanned out across the window: hold ⌥, Tab steps, ⇧Tab back, ⌫ closes one, Esc leaves them; let go of ⌥ to open. A tap flips to the page before |
+| ⌥⇥ / ⌥⇧⇥ (or ⌃⇥) | Open pages fanned out across the window: hold ⌥, Tab steps, ⇧Tab back, 1–9 jump, the pointer moves the highlight, ⌫ closes one, Esc leaves them; let go of ⌥, press ↩ or click to open. A tap flips to the page before |
 | ⌘W | Close the page; the one under it comes up |
 | — | Check a task (click its box in the editor or in Review) and, a moment later, it sinks below the last unfinished item in its list, nested items in tow; uncheck it and it rises back to where it was. Settings → Typing turns that off |
 | — | Drag a task box or a list bullet or number up or down to reorder the list, nested items in tow |
@@ -147,11 +147,15 @@ Return inside a list continues the list; Return on an empty item ends it.
 
 Settings → Caret, with a live line to watch it on. Smooth movement on or off, glide time (default 270 ms, up to 500), whether to also glide while typing or only for arrow keys and clicks, blink style (soft fade, classic, or never), width, and shape: Bar, Pin, Serif, Wedge, Ghost, Comet, Glow or Hollow. The caret takes its color from the theme. If Reduce Motion is on in System Settings, gliding is disabled automatically.
 
+## Looks
+
+A look is the page and what lies behind it together — a theme, a backdrop, and the backdrop's drift, frost and grain — the unit you pick, save and share. Eight come built in, Soft Sky first (Midnight over three deep, neighbouring colours; the default): Slate, Deep Water, Pine, Plum, Umber, Linen (light) and Desktop. Settings → Look shows them as tiles; under them a pill switches between the two halves, *The page* (the theme) and *Behind the glass* (the backdrop). Change either and the look lets go; **Save this look…** keeps the new pairing under a name. **Export…** writes a look to a `.glassinelook.json` file with its theme and backdrop inside, and **Import…** reads one — so a look travels whole to another Mac or another person. View → Look and the ⌘K command bar apply one from anywhere.
+
 ## Themes
 
-Nine built in: Dusk (default), Ocean, Lavender, Graphite, Sepia Night, Midnight, Moss, Frost and Paper. Pick one under View → Theme.
+Nine built in: Dusk, Ocean, Lavender, Graphite, Sepia Night, Midnight (the default, as the page of Soft Sky), Moss, Frost and Paper. Pick one under View → Theme.
 
-To make your own: Settings → Theme, click the tile closest to what you want, press **Duplicate**, then edit. Everything is live in the main window while you tweak. A theme controls the glass material, the tint color and how strongly it covers the blur, an optional paper grain, and the colors for text, headings, accent, Markdown syntax, quotes, code, links, caret and selection. Themes export as small JSON files (**Export…**), so they're easy to share or keep in a dotfiles repo.
+To make your own: Settings → Look → The page, click the tile closest to what you want, press **Duplicate**, then edit. Everything is live in the main window while you tweak. A theme controls the glass material, the tint color and how strongly it covers the blur, an optional paper grain, and the colors for text, headings, accent, Markdown syntax, quotes, code, links, caret and selection. Themes export as small JSON files (**Export theme…**), so they're easy to share or keep in a dotfiles repo; a look carries the theme with its backdrop.
 
 Glass materials, roughly: *Soft glass* is the standard window blur, *Deep glass* is darker and blurrier, *Thin glass* lets more of the desktop through, *Frosted* is a light haze, and *Opaque* turns the blur off entirely.
 
@@ -169,11 +173,11 @@ The mosaic view (⌘P, the grid row at the top of the sidebar, Esc from the edit
 
 ## The tour
 
-The first launch opens a short tour over the page — what Glassine is, then the backdrop, the theme, the type, the caret, the writing modes and the pages, each chosen on the card and seen at once on the page behind. Help → Tour of Glassine brings it back; everything in it is in Settings.
+The first launch opens the tour: not cards to read but a small prompt at the foot of the page that asks for one key at a time and watches you press it — type a few words, ⌘1, ⌘2, Esc, ↩, ⌘↩, ⌘3, ⌥⇥, ⌘K, and a look to pick by eye. Each step lights up when its thing has happened, says in a line what it was, and slides on; twelve steps, about a minute, the page yours throughout. ⇥ skips a step, ⇧⇥ goes back, ✕ ends it (Esc is never taken — it is one of the keys). Help → Tour of Glassine brings it back.
 
 ## Open pages
 
-A document stays open as a page until you close it (⌘W), and the pages sit in a stack with the one you are writing on top — no row of tabs. Hold ⌥ (or ⌃, if that is where your thumb goes) and press Tab: the page steps back and the open pages fan out across it as cards, each the page in little, in the order they were last used, the page before this one already highlighted. Tab steps, ⇧Tab steps back, ⌫ closes one, Esc leaves things, and letting go of the modifier opens the highlighted page, sliding in as the other slides aside — so a tap of ⌥Tab flips to the page you were on before. A row of pips in the footer shows the open pages; the ⌘K command bar lists them by name. The stack is kept between launches. Settings → Library → Keep pages open, off, gives one document at a time.
+A document stays open as a page until you close it (⌘W), and the pages sit in a stack with the one you are writing on top — no row of tabs. The pips in the footer are the pages; rest the pointer on one for a small picture of it. Hold ⌥ (or ⌃, if that is where your thumb goes) and press Tab: the page steps back and the open pages fan out across it as cards, each the page in little, in the order they were last used, the page before this one already highlighted. Tab steps, ⇧Tab steps back, ⌫ closes one, Esc leaves things, and letting go of the modifier opens the highlighted page, sliding in as the other slides aside — so a tap of ⌥Tab flips to the page you were on before. A row of pips in the footer shows the open pages; the ⌘K command bar lists them by name. The stack is kept between launches. Settings → Library → Keep pages open, off, gives one document at a time.
 
 ## Tables
 
@@ -189,7 +193,7 @@ A pipe table shows as a table in the editor: each column as wide as its widest c
 
 ## Daily notes
 
-⌘D, ⌘2, or the Timelapse row in the sidebar opens Timelapse: today's note lying readable at the front, earlier days receding up the corridor behind it — tilted back, smaller and fainter toward the vanishing point. Scroll to walk back through the days; click a card to open it. ⌥⌘D skips the corridor and opens today's note directly, titled with the date and kept in a `Daily` folder created on first use. Press it again tomorrow and you get tomorrow's.
+⌘D, ⌘2, or the Timelapse row in the sidebar opens Timelapse: today's note lying readable at the front, earlier days receding up the corridor behind it — tilted back, smaller and fainter toward the vanishing point. Scroll, or press ↑ and ↓, to walk back through the days; click a card or press ↩ to open it; Esc goes to All Documents and Esc there comes back. ⇥ (or the pill in the header) switches the corridor from the daily notes alone to **everything**: each day holds every document made or last edited then, the day's note first, in a row that recedes like the rest; a day's name opens the day's wall — All Documents narrowed to that day — as does a click on a day in the sidebar's calendar (right-click for the note). ⌘D and ⌘3 skip the corridor and open today's note directly, titled with the date and kept in a `Daily` folder created on first use. Press it again tomorrow and you get tomorrow's.
 
 ## Headings
 
@@ -197,7 +201,7 @@ Headings are centered by default, in the editor and in Review alike; Settings �
 
 ## Appearance
 
-Settings → Theme can follow the system: pick one light theme and one dark theme and Glassine switches with macOS. Otherwise the chosen theme stays put.
+Settings → Look → Appearance can follow the system: pick one light theme and one dark theme and Glassine switches with macOS. Otherwise the chosen theme stays put.
 
 ![Glassine in the Paper theme: a launch checklist on light glass](docs/screenshots/light.jpg)
 
