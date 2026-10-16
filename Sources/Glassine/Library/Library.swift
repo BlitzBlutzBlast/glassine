@@ -371,6 +371,30 @@ final class LibraryStore: ObservableObject {
 
     /// Renames a file or folder. Returns the new relative path.
     func rename(_ rel: String, to newStem: String) throws -> String {
+        let (source, target) = try renameTarget(rel, to: newStem)
+        if target == source { return rel }
+        try FileCoordination.move(from: source, to: target)
+        scanNow()
+        return relativePath(for: target)
+    }
+
+    /// The rename a document gives itself after its first line: the move
+    /// happens off the main thread, and `then` has the new relative path on
+    /// it. Nil when there is nothing to do (the name is already right) or the
+    /// move failed (a name taken meanwhile, say). The listing catches up a
+    /// moment later, through a rescan rather than a wait.
+    func rename(_ rel: String, to newStem: String, then: @escaping (String?) -> Void) {
+        guard let pair = try? renameTarget(rel, to: newStem), pair.target != pair.source else { then(nil); return }
+        FileCoordination.move(from: pair.source, to: pair.target) { [weak self] result in
+            guard let self, case .success = result else { then(nil); return }
+            rescan()
+            then(relativePath(for: pair.target))
+        }
+    }
+
+    /// Where `rel` would go under a new name — the same place when the name
+    /// is already its own.
+    private func renameTarget(_ rel: String, to newStem: String) throws -> (source: URL, target: URL) {
         let source = url(forRelativePath: rel)
         let clean = newStem.sanitizedFileStem
         guard !clean.isEmpty else { throw LibraryError.invalidName }
@@ -382,11 +406,9 @@ final class LibraryStore: ObservableObject {
             let ext = source.pathExtension.isEmpty ? "md" : source.pathExtension
             target = parent.appendingPathComponent(clean).appendingPathExtension(ext)
         }
-        if target.standardizedFileURL == source.standardizedFileURL { return rel }
+        if target.standardizedFileURL == source.standardizedFileURL { return (source, source) }
         guard !FileManager.default.fileExists(atPath: target.path) else { throw LibraryError.alreadyExists }
-        try FileCoordination.move(from: source, to: target)
-        scanNow()
-        return relativePath(for: target)
+        return (source, target)
     }
 
     func move(_ rel: String, toFolder folderRel: String) throws -> String {
@@ -568,19 +590,62 @@ final class LibraryWatcher {
     }
 }
 
+/// Reads, writes and moves through NSFileCoordinator, so iCloud and anything
+/// else presenting the library get their say first.
+///
+/// A coordinated call is a round trip to filecoordinationd, which may wait on
+/// every presenter of the file — iCloud, Finder windows, other apps watching
+/// the folder — for as long as they take. That is never a wait for the main
+/// thread: the synchronous forms below are for background queues and for the
+/// moments that must finish before the app goes on (quitting; a file about to
+/// be moved); everything else goes through the `…(then:)` forms, which do the
+/// work on `queue` and answer on the main thread.
 enum FileCoordination {
+    /// Coordinated work in the order it was asked for.
+    static let queue = DispatchQueue(label: "glassine.files", qos: .userInitiated)
+
+    /// A read off the main thread; `then` runs on it.
+    static func read(_ url: URL, then: @escaping (Result<String, Error>) -> Void) {
+        queue.async {
+            let result = Result { try read(url) }
+            DispatchQueue.main.async { then(result) }
+        }
+    }
+
+    /// A write off the main thread; `then` runs on it.
+    static func write(_ text: String, to url: URL, then: @escaping (Result<Void, Error>) -> Void) {
+        queue.async {
+            let result = Result { try write(text, to: url) }
+            DispatchQueue.main.async { then(result) }
+        }
+    }
+
+    /// A move off the main thread; `then` runs on it.
+    static func move(from source: URL, to target: URL, then: @escaping (Result<Void, Error>) -> Void) {
+        queue.async {
+            let result = Result { try move(from: source, to: target) }
+            DispatchQueue.main.async { then(result) }
+        }
+    }
+
+    /// Whether the file's bytes are on this disk. A file iCloud has not
+    /// brought down yet (or has evicted) is a name without contents; reading
+    /// it waits for the download, which is not a wait for the main thread.
+    static func isMaterialized(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .fileSizeKey, .fileAllocatedSizeKey]),
+              values.isUbiquitousItem == true else { return true }
+        if values.ubiquitousItemDownloadingStatus == .notDownloaded { return false }
+        if let size = values.fileSize, size > 0, values.fileAllocatedSize == 0 { return false }
+        return true
+    }
+
     static func read(_ url: URL) throws -> String {
         var coordError: NSError?
         var result: String?
         var readError: Error?
         NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordError) { u in
             do {
-                if let s = try? String(contentsOf: u, encoding: .utf8) {
-                    result = s
-                } else {
-                    var enc = String.Encoding.utf8
-                    result = try String(contentsOf: u, usedEncoding: &enc)
-                }
+                result = try readPlain(u)
             } catch {
                 readError = error
             }
@@ -588,6 +653,14 @@ enum FileCoordination {
         if let e = coordError { throw e }
         if let e = readError { throw e }
         return result ?? ""
+    }
+
+    /// The file's text with no coordination: UTF-8, or whatever it turns out
+    /// to be. For a file that is on the disk and about to go on screen.
+    static func readPlain(_ url: URL) throws -> String {
+        if let s = try? String(contentsOf: url, encoding: .utf8) { return s }
+        var enc = String.Encoding.utf8
+        return try String(contentsOf: url, usedEncoding: &enc)
     }
 
     static func write(_ text: String, to url: URL) throws {

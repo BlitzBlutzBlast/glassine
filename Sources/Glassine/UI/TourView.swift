@@ -141,7 +141,7 @@ struct TourView: View {
     private var welcome: some View {
         HStack(alignment: .center, spacing: 18) {
             Group {
-                if let image = Bundle.main.image(forResource: "wordmark") {
+                if let image = SidebarView.wordmarkImage {
                     Image(nsImage: image).renderingMode(.template).resizable().interpolation(.high)
                         .scaledToFit().frame(height: 26).foregroundStyle(theme.text.color).opacity(0.9)
                 } else {

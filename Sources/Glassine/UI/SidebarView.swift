@@ -184,11 +184,16 @@ struct SidebarView: View {
         .padding(.top, 6)
     }
 
+    /// The wordmark picture, read from the bundle once. (Asked of the bundle
+    /// on every pass of the sidebar's body, it was read from the disk again
+    /// each time — on the main thread, at animation rate.)
+    static let wordmarkImage: NSImage? = Bundle.main.image(forResource: "wordmark")
+
     /// The hand-made wordmark, tinted with the theme's text color — the foil
     /// grain lives in the image's alpha. Type stands in if the asset is missing.
     @ViewBuilder
     private var wordmark: some View {
-        if let image = Bundle.main.image(forResource: "wordmark") {
+        if let image = SidebarView.wordmarkImage {
             Image(nsImage: image)
                 .renderingMode(.template)
                 .resizable()

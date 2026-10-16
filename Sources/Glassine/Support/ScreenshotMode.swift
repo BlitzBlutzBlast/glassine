@@ -284,6 +284,10 @@ enum ScreenshotMode {
                 post(.mouseMoved, at: NSPoint(x: parts[0], y: window.frame.height - parts[1]), in: window)
             }
         case "walk": TimelineWalker.current?.walk(by: Double(arg) ?? 1)
+        case "stall":
+            // The main thread held for so many seconds, to see the watchdog write it up.
+            Thread.sleep(forTimeInterval: Double(arg) ?? 2)
+            note("stalled on purpose for \(arg)s")
         case "esc": app.escapeFromEditor()
         case "review": app.toggleReview()
         case "beside": app.toggleReviewBeside()

@@ -18,6 +18,9 @@ final class DocumentModel: ObservableObject, Identifiable {
 
     let undoManager = UndoManager()
     let loadError: String?
+    /// The file is still on its way down from iCloud; the page fills in when
+    /// it lands. Nothing typed meanwhile is kept, so nothing is lost under it.
+    @Published private(set) var isLoading = false
     /// A file from outside the library — opened from Finder, dropped on the
     /// Dock icon, or File → Open… — edited and saved where it is. Its
     /// `relativePath` is its absolute path, which no library id can be; it is
@@ -33,6 +36,8 @@ final class DocumentModel: ObservableObject, Identifiable {
     var onVanished: (() -> Void)?
     /// Called when the file content was replaced from disk.
     var onReloaded: (() -> Void)?
+    /// Called when a file that was still downloading has arrived.
+    var onLoaded: (() -> Void)?
 
     private unowned let library: LibraryStore
     private let settings: AppSettings
@@ -56,6 +61,15 @@ final class DocumentModel: ObservableObject, Identifiable {
     private var maxIntervalTimer: Timer?
     private var saveInFlight = false
     private var saveAgain = false
+    /// The first-line rename is on its way through the disk; saves wait for
+    /// it, so no write lands at the old name once the file has moved.
+    private var renameInFlight = false
+    /// A read of the file as it is on disk is on its way back.
+    private var checkInFlight = false
+    /// `close()` was called: the write in flight is the last one, and the
+    /// first-line rename follows it.
+    private var closing = false
+    private var closeRetries = 0
     private var savedIndicatorWork: DispatchWorkItem?
 
     private static let saveQueue = DispatchQueue(label: "glassine.document.save", qos: .userInitiated)
@@ -70,18 +84,52 @@ final class DocumentModel: ObservableObject, Identifiable {
         self.relativePath = inside ? library.relativePath(for: url) : url.standardizedFileURL.path
         var loaded = ""
         var err: String?
-        do {
-            loaded = try FileCoordination.read(url)
-        } catch {
-            err = error.localizedDescription
+        var pending = false
+        if FileCoordination.isMaterialized(url) {
+            // The file is here: a plain read, over in a moment. (A coordinated
+            // read is a round trip to filecoordinationd and every presenter
+            // of the file, which is a wait of any length — not one to take on
+            // the main thread for a page that is about to come up.)
+            do {
+                loaded = try FileCoordination.readPlain(url)
+            } catch {
+                err = error.localizedDescription
+            }
+        } else {
+            // Not down from iCloud yet: ask for it, and read it when it lands,
+            // off the main thread. The page opens empty and fills in.
+            pending = true
+            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
         }
         text = loaded
         lastSavedText = loaded
         loadError = err
+        isLoading = pending
         knownModificationDate = url.contentModificationDate
         titleAtLoad = loaded.derivedMarkdownTitle
         lastFirstLine = titleAtLoad
         recomputeStatsAtOpen()
+        if pending { loadWhenDownloaded() }
+    }
+
+    /// The coordinated read waits for iCloud to finish; the page takes the
+    /// text when it arrives, unless it has been closed or moved meanwhile.
+    private func loadWhenDownloaded() {
+        let target = url
+        FileCoordination.read(target) { [weak self] result in
+            guard let self, isLoading, target == url else { return }
+            isLoading = false
+            guard case .success(let loaded) = result else { return }
+            text = loaded
+            lastSavedText = loaded
+            editGeneration = 0
+            savedGeneration = 0
+            knownModificationDate = url.contentModificationDate
+            titleAtLoad = loaded.derivedMarkdownTitle
+            lastFirstLine = titleAtLoad
+            recomputeStatsAtOpen()
+            onLoaded?()
+        }
     }
 
     /// A short document is counted before the first frame; a long one is
@@ -175,7 +223,7 @@ final class DocumentModel: ObservableObject, Identifiable {
     }
 
     func textDidChange(_ newText: String) {
-        guard newText != text else { return }
+        guard newText != text, !isLoading else { return }
         text = newText
         editGeneration += 1
         if case .saving = saveState {} else { saveState = .dirty }
@@ -207,13 +255,15 @@ final class DocumentModel: ObservableObject, Identifiable {
 
     func save() {
         guard isDirty else { return }
-        if saveInFlight { saveAgain = true; return }
+        if saveInFlight || renameInFlight { saveAgain = true; return }
         saveInFlight = true
         saveState = .saving
         let snapshot = text
         let generation = editGeneration
         let target = url
-        DocumentModel.saveQueue.async { [weak self] in
+        // The model is held until the write lands — a document closed with a
+        // write in flight still finishes its save and the rename after it.
+        DocumentModel.saveQueue.async {
             var failure: String?
             do {
                 try FileCoordination.write(snapshot, to: target)
@@ -222,7 +272,6 @@ final class DocumentModel: ObservableObject, Identifiable {
             }
             let modDate = target.contentModificationDate
             DispatchQueue.main.async {
-                guard let self else { return }
                 self.saveInFlight = false
                 if let failure {
                     self.saveState = .failed(failure)
@@ -232,15 +281,11 @@ final class DocumentModel: ObservableObject, Identifiable {
                     self.remember(saved: snapshot)
                     self.knownModificationDate = modDate
                     self.lastSavedAt = Date()
+                    self.writes += 1
                     if target != self.url {
                         // The file was renamed or moved while this write was in flight, so the
                         // write recreated the old path. Fold it back into the current file.
-                        try? FileCoordination.write(snapshot, to: self.url)
-                        self.knownModificationDate = self.url.contentModificationDate
-                        if let stale = try? FileCoordination.read(target), stale == snapshot {
-                            try? FileManager.default.removeItem(at: target)
-                        }
-                        self.library.rescan()
+                        self.foldBack(snapshot, from: target)
                     }
                     self.saveState = self.isDirty ? .dirty : .saved
                     NotificationCenter.default.post(name: .glassineDocumentSaved, object: nil)
@@ -252,15 +297,46 @@ final class DocumentModel: ObservableObject, Identifiable {
                     self.savedIndicatorWork = work
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
                 }
-                if self.saveAgain || self.isDirty {
-                    self.saveAgain = false
-                    self.scheduleAutosave()
+                self.saveAgain = false
+                if self.isDirty {
+                    if !self.closing {
+                        self.scheduleAutosave()
+                    } else if failure == nil {
+                        self.save()   // typed into while the write was out: straight back
+                    } else if self.closeRetries < 5 {
+                        self.closeRetries += 1   // a closed page tries a few more times, then rests
+                        self.scheduleAutosave()
+                    } else {
+                        self.closing = false
+                    }
+                } else if self.closing {
+                    self.finishClosing()
                 }
             }
         }
     }
 
-    /// Synchronous save for app termination / window close.
+    /// A write that landed at a path the file has since left: the text goes
+    /// to where the file is now, and the stray copy goes — off the main thread.
+    private func foldBack(_ snapshot: String, from stale: URL) {
+        let current = url
+        FileCoordination.queue.async { [weak self] in
+            try? FileCoordination.write(snapshot, to: current)
+            let modDate = current.contentModificationDate
+            if let left = try? FileCoordination.read(stale), left == snapshot {
+                try? FileManager.default.removeItem(at: stale)
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if self.url == current { self.knownModificationDate = modDate }
+                self.library.rescan()
+            }
+        }
+    }
+
+    /// A save that waits for the disk. For the moments that cannot go on
+    /// without it: quitting, and a file about to be moved or trashed. (A page
+    /// going off screen is not one of those — see `close()`.)
     func saveNow() {
         saveDebouncer.cancel()
         guard isDirty else { return }
@@ -272,6 +348,7 @@ final class DocumentModel: ObservableObject, Identifiable {
             remember(saved: text)
             knownModificationDate = url.contentModificationDate
             lastSavedAt = Date()
+            writes += 1
             saveState = .clean
             NotificationCenter.default.post(name: .glassineDocumentSaved, object: nil)
         } catch {
@@ -279,19 +356,50 @@ final class DocumentModel: ObservableObject, Identifiable {
         }
     }
 
-    /// Flushes pending work before the document is closed.
+    /// The page is going off screen: what is unsaved goes to the disk, and
+    /// the first-line rename follows — neither with the main thread waiting.
+    /// The model stays alive until both are done.
     func close() {
         renameDebouncer.cancel()
-        saveNow()
+        saveDebouncer.cancel()
+        maxIntervalTimer?.invalidate()
+        maxIntervalTimer = nil
+        closing = true
+        if isDirty {
+            save()
+        } else if !saveInFlight {
+            finishClosing()
+        }
+        // Otherwise the write in flight calls finishClosing() as it lands.
+    }
+
+    private func finishClosing() {
+        guard closing else { return }
+        closing = false
         renameToMatchTitleIfAppropriate(force: true)
+    }
+
+    /// Everything to the disk before the process goes: whatever the files
+    /// queue still holds, then the write, then the rename, all waited for.
+    func closeNow() {
+        closing = false
+        renameDebouncer.cancel()
+        DocumentModel.saveQueue.sync {}
+        FileCoordination.queue.sync {}
+        saveNow()
+        if !renameInFlight { renameToMatchTitleIfAppropriate(force: true, waiting: true) }
     }
 
     // MARK: - External changes
 
-    /// Polled by the app. Reloads if the file changed on disk and we have no
-    /// unsaved edits; closes if it vanished.
+    /// Called when the library changed underneath the app (a file event, a
+    /// sync round, the app coming to the front, a slow poll). Reloads if the
+    /// file changed on disk and we have no unsaved edits; closes if it
+    /// vanished. The date is checked here; the file itself is read off the
+    /// main thread, and what came back is weighed against the document as it
+    /// is by then.
     func checkExternalChanges() {
-        guard !saveInFlight else { return }
+        guard !saveInFlight, !renameInFlight, !checkInFlight, !isLoading else { return }
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else {
             if !isDirty { onVanished?() }
@@ -301,8 +409,24 @@ final class DocumentModel: ObservableObject, Identifiable {
         // iCloud rounds timestamps and touches files after upload, so a date change alone
         // proves nothing. Compare content before believing anything changed.
         if let known = knownModificationDate, abs(mod.timeIntervalSince(known)) < 1.0 { return }
-        guard let onDisk = try? FileCoordination.read(url) else { return }
-        knownModificationDate = mod
+        checkInFlight = true
+        let target = url
+        let edits = editGeneration
+        let saves = savedGeneration
+        FileCoordination.read(target) { [weak self] result in
+            guard let self else { return }
+            checkInFlight = false
+            // A save or an edit since the read began makes it a reading of a
+            // file that is no longer the one on screen; the next event asks again.
+            guard case .success(let onDisk) = result, target == url, !saveInFlight, !renameInFlight,
+                  editGeneration == edits, savedGeneration == saves else { return }
+            knownModificationDate = mod
+            apply(onDisk: onDisk)
+        }
+    }
+
+    /// The file as it is on disk, against the document as it is now.
+    private func apply(onDisk: String) {
         if onDisk == lastSavedText || onDisk == text { return }   // our own write echoing back
         let echo = recentSaves.contains(GitBlob.sha(of: Data(onDisk.utf8)))
 
@@ -312,7 +436,7 @@ final class DocumentModel: ObservableObject, Identifiable {
             if !echo {
                 let copy = library.uniqueURL(in: url.deletingLastPathComponent(),
                                              stem: title + " (conflict)", ext: url.pathExtension)
-                try? FileCoordination.write(onDisk, to: copy)
+                FileCoordination.write(onDisk, to: copy) { _ in }
             }
             lastSavedText = onDisk
             scheduleAutosave()
@@ -356,8 +480,11 @@ final class DocumentModel: ObservableObject, Identifiable {
         return stem.range(of: "^Untitled( \\d+)?$", options: .regularExpression) != nil
     }
 
-    private func renameToMatchTitleIfAppropriate(force: Bool = false) {
-        guard settings.data.nameFilesFromFirstLine, isAutoNamed else { return }
+    /// The file takes its first line as its name. The move goes through the
+    /// disk off the main thread, with saves held back until it is done;
+    /// `waiting` is for quitting, when there is no later.
+    private func renameToMatchTitleIfAppropriate(force: Bool = false, waiting: Bool = false) {
+        guard settings.data.nameFilesFromFirstLine, isAutoNamed, !isLoading, !renameInFlight else { return }
         let desired = text.derivedMarkdownTitle.sanitizedFileStem
         guard !desired.isEmpty, desired != title else { return }
         if saveInFlight && !force {
@@ -366,16 +493,40 @@ final class DocumentModel: ObservableObject, Identifiable {
             return
         }
         let oldRel = relativePath
-        do {
-            let newRel = try library.rename(oldRel, to: desired)
-            url = library.url(forRelativePath: newRel)
-            relativePath = newRel
-            titleAtLoad = text.derivedMarkdownTitle
-            knownModificationDate = url.contentModificationDate
-            onRenamed?(oldRel, newRel)
-        } catch {
-            // Name collision or similar; try again next time the title changes.
+        let oldURL = url
+        if waiting {
+            if let newRel = try? library.rename(oldRel, to: desired) { moved(from: oldRel, to: newRel) }
+            return
         }
+        renameInFlight = true
+        let writesBefore = writes
+        library.rename(oldRel, to: desired) { [weak self] newRel in
+            guard let self else { return }
+            renameInFlight = false
+            if let newRel {
+                moved(from: oldRel, to: newRel)
+                // A write that could not wait (a file about to be trashed, say)
+                // landed at the old name while the move was under way: the text
+                // goes to the new one, and the stray copy goes.
+                if writes != writesBefore { foldBack(text, from: oldURL) }
+            }
+            // A save held back by the move goes now; if the page is closing,
+            // that save's landing finishes the close. Nothing to save: done.
+            saveAgain = false
+            if isDirty { save() } else { closing = false }
+        }
+    }
+
+    /// Writes that have landed, counted, so a rename knows whether one
+    /// happened while it was under way.
+    private var writes = 0
+
+    private func moved(from oldRel: String, to newRel: String) {
+        url = library.url(forRelativePath: newRel)
+        relativePath = newRel
+        titleAtLoad = text.derivedMarkdownTitle
+        knownModificationDate = url.contentModificationDate
+        onRenamed?(oldRel, newRel)
     }
 
     /// Manual rename from the sidebar.

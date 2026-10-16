@@ -51,8 +51,13 @@ extension URL {
         (try? resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
     }
 
+    /// The file's modification date, read from the disk each time. (A URL
+    /// caches its resource values, and off the main thread the cache is never
+    /// cleared: a date asked for on the save queue after a write came back as
+    /// the date from before it, and every save then looked like a change from
+    /// outside.)
     var contentModificationDate: Date? {
-        (try? resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
     }
 
     func pathRelative(to base: URL) -> String {

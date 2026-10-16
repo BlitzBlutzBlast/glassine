@@ -9,6 +9,7 @@ every release. Newest version first. Three to five lines a version, each
 ## 0.2.27 — October 16, 2026
 
 - **One setting for how it looks.** Settings → Look is the whole of it now: eight looks as tiles, and under them the makings of the one on screen — the page's colours and glass, and the folds (or the desktop) behind it. Duplicate a built-in look and change anything; a look of yours is edited in place. [Looks.](https://docs.glassine.ink/appearance/looks)
+- **No more freezes.** Glassine no longer waits on the disk from its main thread — not after a save, a sync or a switch of page — so iCloud or another app being slow with the library can't hold the window. If it ever stalls for a second anyway, it writes down why, in ~/Library/Logs/Glassine.
 
 ## 0.2.26 — October 16, 2026
 

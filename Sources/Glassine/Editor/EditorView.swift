@@ -81,10 +81,20 @@ struct EditorView: NSViewRepresentable {
             isLoading = true
             textView.load(text: document.text, caretAt: caret)
             isLoading = false
+            // Either may arrive after the editor has moved on to another
+            // document (a read of this one finishing late); it is for this one only.
             document.onReloaded = { [weak self, weak document] in
-                guard let self, let textView = self.textView, let document else { return }
+                guard let self, let textView = self.textView, let document, document.id == self.documentID else { return }
                 self.isLoading = true
                 textView.replaceText(with: document.text)
+                self.isLoading = false
+            }
+            // A file that was still coming down from iCloud: the page opened
+            // empty and takes the text now, the caret where an opening puts it.
+            document.onLoaded = { [weak self, weak document] in
+                guard let self, let textView = self.textView, let document, document.id == self.documentID else { return }
+                self.isLoading = true
+                textView.load(text: document.text, caretAt: caret)
                 self.isLoading = false
             }
             DispatchQueue.main.async { [weak textView] in

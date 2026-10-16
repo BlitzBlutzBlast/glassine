@@ -59,8 +59,7 @@ extension AppState {
     func closeCurrentPage() {
         guard let doc = document else { return }
         if doc.isLoose {
-            doc.saveNow()
-            closeLooseDocument()
+            closeLooseDocument()   // saves what is unsaved, off the main thread
             return
         }
         closePage(doc.relativePath)
@@ -75,7 +74,6 @@ extension AppState {
             pageSlide = -1
             open(ref)
         } else {
-            document?.saveNow()
             closeLooseDocument()
             showingGallery = true
         }

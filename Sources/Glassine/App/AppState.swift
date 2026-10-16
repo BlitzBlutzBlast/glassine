@@ -1742,7 +1742,7 @@ final class AppState: ObservableObject {
     // MARK: - Shutdown
 
     func saveEverythingNow() {
-        document?.close()
+        document?.closeNow()
         settings.saveNow()
     }
 }

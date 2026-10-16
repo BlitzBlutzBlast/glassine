@@ -53,5 +53,9 @@ case "${1:-all}" in
   tourall) for n in 0 1 2 3 4 6 7 8 9 10 11; do DELAY=4.5 shoot "views-tour-$n" -glassine.launchView tour -glassine.tourStep "$n"; done ;;
   tourdone) DELAY=2.4 shoot views-tour-done -glassine.launchView tour -glassine.tourStep 2 -glassine.shootScript "0.8:gallery" ;;
   carouselclick) DELAY=4 shoot views-carousel-click -glassine.shootScript "1.0:step:fwd;1.6:click:640,400" ;;
+  # The main thread held for three seconds on purpose: the watchdog should leave a report in ~/Library/Logs/Glassine and a line in log.txt.
+  stall) DELAY=6 shoot views-stall -glassine.shootScript "1.0:stall:3;4.6:gallery" ;;
+  # A page switched away from with unsaved text: the save and the first-line rename land off the main thread.
+  switch) DELAY=6 shoot views-switch -glassine.shootScript "0.8:select:2,15;1.0:type@0:Renamed by its first line;1.8:open:Garden.md;3.4:gallery"; ls "$LIB" ;;
   all) "$0" timelapse; "$0" everything; "$0" day; "$0" carousel; "$0" look; "$0" tour 2; "$0" tour 10 ;;
 esac

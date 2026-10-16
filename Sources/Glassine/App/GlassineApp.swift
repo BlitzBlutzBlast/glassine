@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A freeze of a second or more writes the main thread's stack to
+        // ~/Library/Logs/Glassine, so it can be read rather than guessed at.
+        MainThreadWatchdog.start()
         NSApp.appearance = nil
         NSWindow.allowsAutomaticWindowTabbing = false
         AppIcon.followAppearance()

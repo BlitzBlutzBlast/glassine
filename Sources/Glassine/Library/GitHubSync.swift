@@ -887,6 +887,9 @@ final class SyncEngine: ObservableObject {
     private var runAgain = false
     private var timer: Timer?
     private let soon = Debouncer(delay: 3)
+    /// This Mac's name for the commit messages, asked once: `Host` can go to
+    /// the network for it, and every round used to ask on the main thread.
+    private static let hostName: String = Host.current().localizedName ?? "a Mac"
     private var hashCache: [String: (modified: Date, size: Int, sha: String)] = [:]
     private var observers: [NSObjectProtocol] = []
 
@@ -1074,7 +1077,7 @@ final class SyncEngine: ObservableObject {
             return DispatchQueue.main.sync { busyPath?() }
         }
         let run = SyncRun(remote: remote, root: library.rootURL, stateURL: stateURL, busy: busy,
-                          host: Host.current().localizedName ?? "a Mac", hashCache: hashCache)
+                          host: SyncEngine.hostName, hashCache: hashCache)
         run.log = { line in ScreenshotMode.note("sync: " + line) }
         Task.detached(priority: .utility) { [weak self] in
             let outcome = await run.run()

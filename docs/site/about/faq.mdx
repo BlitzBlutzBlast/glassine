@@ -64,4 +64,7 @@ icon: "circle-help"
   <Accordion title="Something looks wrong. How do I report it?">
     Help → Copy Debug Info (⌘⌥⇧D) puts the editor's geometry and every setting on the clipboard. Paste it into an issue at [github.com/a-libre/glassine/issues](https://github.com/a-libre/glassine/issues) with a line about what you expected.
   </Accordion>
+  <Accordion title="The window froze for a moment. Is there a record of it?">
+    Yes. Glassine watches its own main thread; whenever it fails to answer for a second, the stack of what it was doing is written to `~/Library/Logs/Glassine/stall-….txt` (and a line goes to the unified log under the subsystem `com.alexlibre.glassine`, category `watchdog`). Attach the newest file to an issue and the freeze can be read rather than guessed at. Nothing is sent anywhere by itself.
+  </Accordion>
 </AccordionGroup>
