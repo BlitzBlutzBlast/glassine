@@ -9,25 +9,39 @@
 // feed: if it fails, the feed is served anyway.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { track } from '@vercel/analytics/server';
 
-const feed = () => readFileSync(join(process.cwd(), 'feed', 'appcast.xml'), 'utf8');
+/// The feed: the file bundled beside this function (vercel.json's
+/// includeFiles), looked for next to the function and at the working
+/// directory; failing both, the same file as the deployment serves it
+/// statically at /feed/appcast.xml.
+async function feed(req) {
+  const here = fileURLToPath(new URL('.', import.meta.url));
+  for (const path of [join(here, '..', 'feed', 'appcast.xml'), join(process.cwd(), 'feed', 'appcast.xml')]) {
+    try { return readFileSync(path, 'utf8'); } catch {}
+  }
+  const host = process.env.VERCEL_URL || req.headers.host;
+  const response = await fetch(`https://${host}/feed/appcast.xml`, { headers: { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '' } });
+  if (!response.ok) throw new Error(`feed ${response.status}`);
+  return await response.text();
+}
 
 export default async function handler(req, res) {
   const ua = req.headers['user-agent'] || '';
   const version = (/Glassine\/([\d.]+)/.exec(ua) || [])[1] || 'unknown';
   const sparkle = (/Sparkle\/([\d.]+)/.exec(ua) || [])[1] || 'none';
+  let xml;
+  try {
+    xml = await feed(req);
+  } catch (error) {
+    res.status(500).send('The feed is missing from this deployment: ' + (error && error.message));
+    return;
+  }
   try {
     await track('appcast', { version, sparkle }, { request: req });
   } catch {
     // Analytics not on, or not reachable: the feed still goes out.
-  }
-  let xml;
-  try {
-    xml = feed();
-  } catch (error) {
-    res.status(500).send('The feed is missing from this deployment.');
-    return;
   }
   res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
   // Every check reaches this function, so every check is counted; the file
