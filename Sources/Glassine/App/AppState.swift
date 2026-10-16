@@ -321,6 +321,11 @@ final class AppState: ObservableObject {
                 if let moved = absorbed[look.backdropID] { var l = look; l.backdropID = moved; looks.update(l) }
             }
         }
+        // A backdrop that is gone — a set deleted, or absorbed by a copy that
+        // never saved the settings — is Soft Sky from here on, not the desktop.
+        if !backdrops.all.contains(where: { $0.id == settings.data.backdrop }) {
+            settings.data.backdrop = BackdropPreset.softSkyID
+        }
         looks.prune(themes: themes, backdrops: backdrops)
 
         bootstrapLibrary()

@@ -113,6 +113,9 @@ final class LookStore: ObservableObject {
     }
 
     private func persist() {
+        // A check shot runs under the real app's identifier with settings of
+        // its own for the run; what it does to these stays with it too.
+        guard !ScreenshotMode.isActive else { return }
         if let data = try? JSONEncoder().encode(custom) {
             UserDefaults.standard.set(data, forKey: LookStore.defaultsKey)
         }
