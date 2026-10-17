@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon-1024.png" width="176" alt="Glassine's icon: the wordmark's lowercase g on a sheet of paper, with ruled lines running in from the left">
+  <img src="Resources/AppIcon-1024.png" width="176" alt="Glassine's icon: the wordmark's lowercase g in paper-white on the app's own glass — Midnight over Soft Sky — with ruled lines running in from the left">
 </p>
 
 <h1 align="center">Glassine</h1>

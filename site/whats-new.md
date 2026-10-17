@@ -6,6 +6,10 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
+## 0.2.29 — October 17, 2026
+
+- **A quieter icon.** The Dock icon is the app's own glass again, now in the look it comes with: Midnight over Soft Sky, the g in paper-white on it.
+
 ## 0.2.28 — October 17, 2026
 
 - **Arrange the wall by hand.** Pick up a card in All Documents and carry it: the wall makes room with a spring, and where you let go is where it stays. That becomes *Your order* — one order for the whole library, the sidebar's folders included. [All Documents.](https://docs.glassine.ink/library/all-documents#your-order)

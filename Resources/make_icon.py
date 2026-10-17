@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Generates AppIcon.iconset (PNGs) for Glassine. Run once; build.sh turns it into .icns.
 With --dark, the same drawing in the dark palette, into AppIcon-Dark.iconset.
-With --aurora, the sheet is the app's own glass: a square cut from a picture
-of the window with the Dusk theme over the Aurora backdrop (Resources/aurora.png,
-taken by the app itself — tests/shot-icon.sh), the letter in paper-white on it,
-into AppIcon-Aurora.iconset.
+With --glass <backdrop>, the sheet is the app's own glass: a square cut from a
+picture of the window wearing a look (Resources/glass-<backdrop>.jpg, taken by
+the app itself — tests/shot-icon.sh), the letter in paper-white on it, written
+to AppIcon.iconset and AppIcon-Dark.iconset both — one icon for both
+appearances, the glass being dark already — and the two 1024 masters. --crop
+says where across the picture the square is cut from, 0 the left edge to 1
+the right (the default; the caret sits at the top left). The icon the app
+ships with is `--glass softsky`: Midnight over Soft Sky, the look it comes
+with. (Before October 17 2026 it was Dusk over Aurora, by the same means.)
 
 The mark is the wordmark's lowercase g on a sheet of paper, with ruled lines
 running in from the left and fading out — lines of text arriving at the letter.
@@ -18,8 +23,6 @@ import os
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "AppIcon.iconset")
-os.makedirs(OUT, exist_ok=True)
 
 # Apple's macOS icon grid: an 824-point squircle centred in 1024, and the
 # corner radius from the template. Everything below is in these 1024-point
@@ -51,24 +54,46 @@ PALETTES = {
         edge=(255, 255, 255, 30),
     ),
 }
-VARIANT = "aurora" if "--aurora" in sys.argv else ("dark" if "--dark" in sys.argv else "light")
-P = PALETTES["dark" if VARIANT == "aurora" else VARIANT]
+def option(name, default=None):
+    """The word after --name on the command line, or default."""
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+
+
+GLASS = option("--glass")                  # a backdrop's name: Resources/glass-<name>.png
+VARIANT = "glass" if GLASS else ("dark" if "--dark" in sys.argv else "light")
+P = PALETTES["dark" if VARIANT == "glass" else VARIANT]
 PAPER_TOP, PAPER_BOTTOM = P["paper"]
 INK_TOP, INK_BOTTOM = P["ink"]
 RULE = P["rule"]
-if VARIANT != "light":
-    OUT = os.path.join(HERE, "AppIcon-Dark.iconset" if VARIANT == "dark" else "AppIcon-Aurora.iconset")
-    os.makedirs(OUT, exist_ok=True)
+# Where the sizes go: the glass icon is the icon, for both appearances.
+OUTS = {
+    "light": ["AppIcon.iconset"],
+    "dark": ["AppIcon-Dark.iconset"],
+    "glass": ["AppIcon.iconset", "AppIcon-Dark.iconset"],
+}[VARIANT]
+MASTERS = {
+    "light": ["AppIcon-1024.png"],
+    "dark": ["AppIcon-Dark-1024.png"],
+    "glass": ["AppIcon-1024.png", "AppIcon-Dark-1024.png"],
+}[VARIANT]
+for out in OUTS:
+    os.makedirs(os.path.join(HERE, out), exist_ok=True)
 
-# The glass itself, for the aurora icon: a square of the window's picture,
-# clear of the caret at the top left and the traffic lights. The picture is
-# 2400×1720 (a 1200×860 window on a Retina display); the square is the
-# window's full height, from the right, where the folds cross.
-AURORA = None
-if VARIANT == "aurora":
-    src = Image.open(os.path.join(HERE, "aurora.png")).convert("RGBA")
+# The glass itself: a square of the window's picture, clear of the caret at
+# the top left and the traffic lights. The picture is 2400×1720 (a 1200×860
+# window on a Retina display); the square is the window's full height, cut
+# from --crop of the way across (the right edge unless said otherwise).
+GLASS_SQUARE = None
+if VARIANT == "glass":
+    src = Image.open(os.path.join(HERE, f"glass-{GLASS}.jpg")).convert("RGBA")
     side = src.height
-    AURORA = src.crop((src.width - side, 0, src.width, side))
+    at = max(0.0, min(1.0, float(option("--crop", "1"))))
+    left = int(round((src.width - side) * at))
+    GLASS_SQUARE = src.crop((left, 0, left + side, side))
 
 # --- The letter -------------------------------------------------------------------------------
 # Measured from the wordmark's g, in a 279×428 box: a near-monoline bowl, a
@@ -135,8 +160,8 @@ def build(size):
     icon_px = ICON * k * ss
     off_px = OFF * k * ss
 
-    if AURORA is not None:
-        art = AURORA.resize((int(round(icon_px)),) * 2, Image.LANCZOS)
+    if GLASS_SQUARE is not None:
+        art = GLASS_SQUARE.resize((int(round(icon_px)),) * 2, Image.LANCZOS)
         n = art.width
     else:
         art = vertical_gradient(int(round(icon_px)), PAPER_TOP, PAPER_BOTTOM)
@@ -164,7 +189,7 @@ def build(size):
             starts = RULE_STARTS
         thickness = max(1.0 * ss, 7.0 * k * ss)                      # never thinner than a pixel
         alpha_max = 0.34 if size >= 64 else 0.5
-        if AURORA is not None:
+        if GLASS_SQUARE is not None:
             alpha_max *= 0.8           # over the folds the lines stay a whisper
         rules = Image.new("L", (n, n), 0)
         rd = ImageDraw.Draw(rules)
@@ -187,7 +212,7 @@ def build(size):
 
     # The letter itself, in ink that darkens toward the top like the wordmark study.
     letter = draw_g(n, gx, gy, gh, 255)
-    if AURORA is not None:
+    if GLASS_SQUARE is not None:
         # A soft shadow under the letter, so it sits on the glass where a
         # bright fold passes rather than dissolving into it.
         shade = Image.new("RGBA", (n, n), (0, 0, 0, 0))
@@ -217,11 +242,14 @@ def build(size):
 
 
 if __name__ == "__main__":
-    master = {"light": "AppIcon-1024.png", "dark": "AppIcon-Dark-1024.png", "aurora": "AppIcon-Aurora-1024.png"}[VARIANT]
-    build(1024).save(os.path.join(HERE, master))
+    big = build(1024)
+    for master in MASTERS:
+        big.save(os.path.join(HERE, master))
     for px in (16, 32, 128, 256, 512):
         for scale in (1, 2):
             n = px * scale
             name = f"icon_{px}x{px}.png" if scale == 1 else f"icon_{px}x{px}@2x.png"
-            build(n).save(os.path.join(OUT, name))
-    print("wrote", OUT)
+            img = build(n)
+            for out in OUTS:
+                img.save(os.path.join(HERE, out, name))
+    print("wrote", ", ".join(OUTS))
