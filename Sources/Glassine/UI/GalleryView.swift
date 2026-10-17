@@ -177,6 +177,7 @@ struct GalleryView: View {
         // the same way.
         drag.plan = plan
         drag.planner = { docs in WallPlan(items: docs, columns: plan.columns.count, width: plan.width, spacing: plan.spacing) }
+        drag.noteHeights(of: plan)
         return ZStack(alignment: .topLeading) {
             ForEach(plan.visible(in: band, keeping: keep), id: \.id) { doc in
                 let frame = plan.frames[doc.id] ?? .zero
@@ -374,10 +375,6 @@ struct WallPlan {
     let spacing: CGFloat
     let width: CGFloat
     let height: CGFloat
-    /// The columns' heights before each card was placed — `prefixHeights[k]`
-    /// is the wall after the first k cards — which is all that decides where
-    /// a card put in at k would land.
-    let prefixHeights: [[CGFloat]]
     /// Changes when the order of the cards or the number of columns does.
     let signature: Int
 
@@ -386,8 +383,6 @@ struct WallPlan {
         let columnWidth = ((width - spacing * CGFloat(n - 1)) / CGFloat(n)).rounded(.down)
         var cols = Array(repeating: [DocumentRef](), count: n)
         var heights = Array(repeating: CGFloat(0), count: n)
-        var prefixes: [[CGFloat]] = [heights]
-        prefixes.reserveCapacity(items.count + 1)
         var frames: [String: CGRect] = [:]
         var slots: [String: Slot] = [:]
         var hasher = Hasher()
@@ -399,7 +394,6 @@ struct WallPlan {
             slots[item.id] = Slot(column: target, row: cols[target].count, midY: heights[target] + h / 2)
             cols[target].append(item)
             heights[target] += h + spacing
-            prefixes.append(heights)
             hasher.combine(item.id)
         }
         self.items = items
@@ -410,7 +404,6 @@ struct WallPlan {
         self.spacing = spacing
         self.width = width
         self.height = max(0, (heights.max() ?? 0) - spacing)
-        self.prefixHeights = prefixes
         self.signature = hasher.finalize()
     }
 
@@ -431,23 +424,6 @@ struct WallPlan {
         }
     }
 
-    /// Where in `items` a card `height` tall should be put in so that it
-    /// lands nearest `center` — the middle of the card as it is being carried,
-    /// in the wall's coordinates. Each card takes the shortest column at its
-    /// turn, so a place in the order is a place on the wall; this is the one
-    /// closest to where the card is held. The first of equals.
-    func insertion(nearest center: CGPoint, height: CGFloat) -> Int {
-        var best = 0
-        var bestDistance = CGFloat.infinity
-        for (k, heights) in prefixHeights.enumerated() {
-            let col = WallPlan.shortest(heights)
-            let x = CGFloat(col) * (columnWidth + spacing) + columnWidth / 2
-            let y = heights[col] + height / 2
-            let d = hypot(x - center.x, y - center.y)
-            if d < bestDistance { bestDistance = d; best = k }
-        }
-        return best
-    }
 }
 
 /// How tall each card is at each width, as the cards themselves report it —
@@ -651,6 +627,15 @@ struct CardFrameReporter: View {
 /// is up; the lifted card alone watches the pointer, so the rest of the wall
 /// is not redrawn on every move.
 ///
+/// The carry is a carry on a board, not in a list: the card leaves its
+/// column, which closes up under it, and goes into the column under the
+/// pointer at the gap nearest it, whose cards below make room. Nothing else
+/// moves — except at the foot of the wall, which stays level: a card at the
+/// very foot of a column that has grown too tall crosses to the shortest.
+/// The wall is still one order laid out shortest-column-first, so the board
+/// the pointer makes is written back as the order that lays out as it (see
+/// `sequence(withCardAt:)`), and a place the order cannot hold is not offered.
+///
 /// Coordinates are the scroll view's (`GalleryNavigator.coordinateSpace`),
 /// which do not move with the scroll; the wall says where its own origin is
 /// in them, which is how the pointer is placed on the plan.
@@ -683,12 +668,20 @@ final class WallDrag {
     @ObservationIgnored var viewport: CGSize = .zero
     @ObservationIgnored weak var scrollView: NSScrollView?
     @ObservationIgnored private var wallOrigin: CGPoint = .zero
-    /// The order without the carried card, and its plan: the place the pointer
-    /// means is read off this, which does not change as the card moves, so
-    /// the choice cannot chase its own tail.
-    @ObservationIgnored private var rest: [String] = []
-    @ObservationIgnored private var restPlan: WallPlan?
-    @ObservationIgnored private var insertion = -1
+    /// The board without the carried card — the wall's columns as they
+    /// stood at the pick-up, the card taken out of its own — and each card's
+    /// height. The place the pointer means is read off this, which does not
+    /// change as the card moves, so the choice cannot chase its own reflow.
+    @ObservationIgnored private var board: [[String]] = []
+    @ObservationIgnored private var heights: [String: CGFloat] = [:]
+    /// The top of each gap in each column of the board: `tops[c][j]` is
+    /// where a card put in at j would start.
+    @ObservationIgnored private var tops: [[CGFloat]] = []
+    @ObservationIgnored private var columnWidth: CGFloat = 0
+    @ObservationIgnored private var spacing: CGFloat = 0
+    /// The sequence for each place tried, once: the board does not change.
+    @ObservationIgnored private var tried: [Int: (ids: [String], holds: Bool)] = [:]
+    @ObservationIgnored private var placed = -1
     @ObservationIgnored private var speed: CGFloat = 0
     @ObservationIgnored private var scroller: Timer?
 
@@ -698,7 +691,7 @@ final class WallDrag {
     /// there is nothing to carry it among.
     @discardableResult
     func begin(id: String, at point: CGPoint) -> Bool {
-        guard !active, let plan, let planner, let frame = plan.frames[id] else { return false }
+        guard !active, let plan, let frame = plan.frames[id] else { return false }
         self.id = id
         order = plan.items.map(\.id)
         pointer = point
@@ -706,9 +699,18 @@ final class WallDrag {
         width = frame.width
         height = frame.height
         settling = false
-        rest = order.filter { $0 != id }
-        restPlan = planner(plan.items.filter { $0.id != id })
-        insertion = -1
+        columnWidth = plan.columnWidth
+        spacing = plan.spacing
+        heights = plan.frames.mapValues(\.height)
+        board = plan.columns.map { $0.map(\.id).filter { $0 != id } }
+        tops = board.map { column in
+            var y: CGFloat = 0
+            var out = [y]
+            for card in column { y += (heights[card] ?? 0) + plan.spacing; out.append(y) }
+            return out
+        }
+        tried = [:]
+        placed = -1
         NSCursor.closedHand.push()
         ScreenshotMode.note("wall drag begin \(id) at \(order.firstIndex(of: id) ?? -1) of \(order.count)")
         return true
@@ -723,6 +725,27 @@ final class WallDrag {
 
     func wallMoved(to origin: CGPoint) {
         wallOrigin = origin
+    }
+
+    /// A card built while the wall scrolled under the carry may have come
+    /// out a different height from the plan's guess; the board takes the
+    /// new heights so its sequences keep laying out as it shows.
+    func noteHeights(of plan: WallPlan) {
+        guard active else { return }
+        var changed = false
+        for (card, frame) in plan.frames where heights[card] != frame.height {
+            heights[card] = frame.height
+            changed = true
+        }
+        guard changed else { return }
+        tops = board.map { column in
+            var y: CGFloat = 0
+            var out = [y]
+            for card in column { y += (heights[card] ?? 0) + spacing; out.append(y) }
+            return out
+        }
+        tried = [:]
+        placed = -1
     }
 
     /// The documents in the order being tried, for the wall to lay out. One
@@ -765,23 +788,95 @@ final class WallDrag {
         if id != nil { NSCursor.pop() }
         id = nil
         order = []
-        rest = []
-        restPlan = nil
+        board = []
+        tops = []
+        heights = [:]
+        tried = [:]
         settling = false
-        insertion = -1
+        placed = -1
     }
 
+    /// The place the pointer means: the column under the middle of the held
+    /// card, and in it the gap nearest that middle — among the gaps the order
+    /// can hold the card in. Nothing in the pointer's column can hold it only
+    /// when the wall is strange (a column with nothing in it); then the
+    /// nearest gap anywhere.
     private func recompute() {
-        guard let id, let restPlan else { return }
+        guard id != nil, !board.isEmpty else { return }
         // The middle of the card as it is held, on the wall.
         let center = CGPoint(x: pointer.x - grab.width - wallOrigin.x + width / 2,
                              y: pointer.y - grab.height - wallOrigin.y + height / 2)
-        let at = max(0, min(rest.count, restPlan.insertion(nearest: center, height: height)))
-        guard at != insertion else { return }
-        insertion = at
-        var next = rest
-        next.insert(id, at: at)
+        let pitch = columnWidth + spacing
+        let under = max(0, min(board.count - 1, Int(((center.x - columnWidth / 2) / pitch).rounded())))
+        var best = -1
+        var bestDistance = CGFloat.infinity
+        func consider(_ c: Int, _ j: Int, _ distance: CGFloat) {
+            guard distance < bestDistance, sequence(withCardAt: c, j).holds else { return }
+            best = c * 100_000 + j
+            bestDistance = distance
+        }
+        for j in tops[under].indices { consider(under, j, abs(tops[under][j] + height / 2 - center.y)) }
+        if best < 0 {
+            for c in board.indices where c != under {
+                let x = CGFloat(c) * pitch + columnWidth / 2
+                for j in tops[c].indices { consider(c, j, hypot(x - center.x, tops[c][j] + height / 2 - center.y)) }
+            }
+        }
+        guard best >= 0, best != placed, let next = tried[best]?.ids else { return }
+        placed = best
         withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { order = next }
+    }
+
+    /// The wall's order with the carried card put into column `c` at gap `j`
+    /// of the board — the sequence that lays out as that board, shortest
+    /// column first — and whether the card's place survives the laying out.
+    ///
+    /// The sequence is the board read off bottom-up the way the layout reads
+    /// it in: at each step the next card is the one at the head of the
+    /// column the layout would fill next, the shortest so far. While every
+    /// column still has cards, the layout puts each card back exactly where
+    /// the board has it. Once a column is spent while shortest the layout
+    /// fills it anyway, with whatever comes next — the cards at the foot of
+    /// the taller columns, taken lowest column first — and from there the
+    /// foot of the wall is the layout's, not the board's. A place for the
+    /// carried card past that point is not one the order can hold.
+    private func sequence(withCardAt c: Int, _ j: Int) -> (ids: [String], holds: Bool) {
+        let key = c * 100_000 + j
+        if let hit = tried[key] { return hit }
+        guard let id else { return ([], false) }
+        var lists = board
+        lists[c].insert(id, at: j)
+        let n = lists.count
+        let total = lists.reduce(0) { $0 + $1.count }
+        var heads = Array(repeating: 0, count: n)
+        var consumed = Array(repeating: CGFloat(0), count: n)
+        var laid = Array(repeating: CGFloat(0), count: n)
+        var out: [String] = []
+        out.reserveCapacity(total)
+        var diverged = false
+        var holds = true
+        for _ in 0..<total {
+            var target = 0
+            for i in 1..<n where laid[i] < laid[target] { target = i }
+            var source = target
+            if heads[target] >= lists[target].count {
+                diverged = true
+                source = -1
+                for i in 0..<n where heads[i] < lists[i].count {
+                    if source < 0 || consumed[i] < consumed[source] { source = i }
+                }
+            }
+            let card = lists[source][heads[source]]
+            heads[source] += 1
+            if card == id, diverged { holds = false }
+            let h = (heights[card] ?? 0) + spacing
+            laid[target] += h
+            consumed[source] += h
+            out.append(card)
+        }
+        let result = (ids: out, holds: holds)
+        tried[key] = result
+        return result
     }
 
     // MARK: - Scrolling at the edges
