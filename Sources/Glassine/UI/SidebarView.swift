@@ -134,7 +134,7 @@ struct SidebarView: View {
                 // finished search — slide rather than blink.
                 .animation(.easeOut(duration: 0.22), value: state.library.generation)
                 .animation(.easeOut(duration: 0.18), value: state.searchText.isEmpty && state.tagFilter == nil)
-                .background(ScrollHostFinder(drag: drag))
+                .background(ScrollHostFinder { drag.scrollView = $0 })
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { drag.viewport = $0 }
             footer

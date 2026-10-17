@@ -2,13 +2,25 @@ import AppKit
 import SwiftUI
 
 /// Craft-style mosaic of the whole library: one card per document with its
-/// title and a small rendered preview. Click or press Return to open.
+/// title and a small rendered preview. Click or press Return to open; pick a
+/// card up and carry it to put the library in your own order.
 struct GalleryView: View {
     @EnvironmentObject var state: AppState
     @StateObject private var nav = GalleryNavigator()
+    @State private var drag = WallDrag()
     @FocusState private var searchFocused: Bool
     /// Shared with the editor so an opened card can grow into the page.
     let zoom: Namespace.ID
+    /// Bumped when a card reports a height the plan did not have yet, so the
+    /// wall is laid out again with it.
+    @State private var measured = 0
+    /// The stretch of the wall the scroll view shows, with a margin either
+    /// side, in the wall's own coordinates — in coarse steps, so the cards
+    /// are not rebuilt on every turn of the wheel.
+    @State private var band: ClosedRange<CGFloat> = 0 ... 1536
+    /// When the wall came on screen: the cards cascade in for a moment after,
+    /// and arrive at once from then on (scrolled to, say).
+    @State private var arrived = Date()
 
     private var theme: Theme { state.theme }
 
@@ -16,6 +28,10 @@ struct GalleryView: View {
         if let filtered = state.filteredDocuments { return filtered }
         return state.sorted(state.activeDocuments)   // the Shelf stays off the wall; search still reaches it
     }
+
+    /// Cards can be carried into an order only on the whole wall: a search, a
+    /// tag or a day shows a selection, and an order among a selection is not one.
+    private var reorderable: Bool { state.filteredDocuments == nil }
 
     private var headerTitle: String {
         if let day = state.dayFilter { return GalleryView.dayName(day) }
@@ -66,50 +82,46 @@ struct GalleryView: View {
         }
     }
 
+    static let sideInset: CGFloat = 28
+    static let spacing: CGFloat = 14
+
     var body: some View {
         GeometryReader { geo in
             let docs = documents
+            let shown = drag.active ? drag.arranged(docs) : docs
+            let wallWidth = max(100, geo.size.width - 2 * GalleryView.sideInset)
             let columns = max(2, min(5, Int((geo.size.width - 56) / 270)))
-            let plan = MasonryPlan(items: docs, columns: columns, spacing: 14) { GalleryCard.estimatedHeight(for: $0) }
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 20) {
-                        header
-                        if docs.isEmpty {
-                            emptyState
-                        } else {
-                            HStack(alignment: .top, spacing: 14) {
-                                ForEach(plan.columns.indices, id: \.self) { c in
-                                    LazyVStack(spacing: 14) {
-                                        ForEach(Array(plan.columns[c].enumerated()), id: \.element.id) { row, doc in
-                                            GalleryCard(doc: doc, isSelected: nav.selectedID == doc.id, zoom: zoom)
-                                                .id(doc.id)
-                                                .background(CardFrameReporter(id: doc.id))
-                                                .modifier(CardEntrance(id: doc.id, row: row))
-                                        }
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 28)
-                    .padding(.top, 52)
-                    .padding(.bottom, 48)
-                }
-                .coordinateSpace(name: GalleryNavigator.coordinateSpace)
-                .onPreferenceChange(CardFramesKey.self) { nav.frames = $0 }
-                .onChange(of: nav.selectedID) { _, id in
-                    guard let id else { return }
-                    // Next pass: by then the cards have laid out and reported where they are.
-                    DispatchQueue.main.async {
-                        guard let anchor = nav.scrollAnchor(toReveal: id, viewportHeight: geo.size.height) else { return }
-                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: anchor) }
+            let plan = WallPlan(items: shown, columns: columns, width: wallWidth, spacing: GalleryView.spacing, version: measured)
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+                    if docs.isEmpty {
+                        emptyState
+                    } else {
+                        wall(plan, viewport: geo.size)
                     }
                 }
+                .padding(.horizontal, GalleryView.sideInset)
+                .padding(.top, 52)
+                .padding(.bottom, 48)
+                .background(ScrollHostFinder { nav.scrollView = $0; drag.scrollView = $0 })
+            }
+            .coordinateSpace(name: GalleryNavigator.coordinateSpace)
+            .overlay(alignment: .topLeading) {
+                // The card being carried rides over the wall, under the pointer.
+                if let id = drag.id, let doc = docs.first(where: { $0.id == id }) {
+                    LiftedCard(doc: doc, drag: drag, zoom: zoom)
+                }
+            }
+            .onPreferenceChange(CardFramesKey.self) { nav.frames = $0 }
+            .onChange(of: nav.selectedID) { _, id in
+                guard let id else { return }
+                // Next pass: by then the wall has laid out and said where it is.
+                DispatchQueue.main.async { nav.reveal(id, viewportHeight: geo.size.height) }
             }
             .onAppear {
                 nav.plan = plan
+                drag.viewport = geo.size
                 nav.ensureSelection(preferring: state.document?.relativePath)
                 // For a check shot: the wall is on screen once the pass that
                 // built it has been committed, which is the next turn of the loop.
@@ -120,7 +132,9 @@ struct GalleryView: View {
                 nav.plan = plan
                 nav.planChanged(query: state.searchText)
             }
+            .onChange(of: geo.size) { _, size in drag.viewport = size }
         }
+        .environment(drag)
         .foregroundStyle(theme.text.color)
         .background(WindowTap { nav.window = $0 })
         .background(
@@ -136,6 +150,7 @@ struct GalleryView: View {
             .opacity(0)
         )
         .onAppear {
+            arrived = Date()
             nav.install { [weak state] event in
                 guard let state else { return false }
                 return GalleryView.handle(event, nav: nav, state: state)
@@ -146,7 +161,49 @@ struct GalleryView: View {
             takeSearchFocusIfAsked()
         }
         .onChange(of: state.searchFocusRequest) { _, _ in takeSearchFocusIfAsked() }
-        .onDisappear { nav.uninstall() }
+        .onDisappear { nav.uninstall(); drag.clear() }
+    }
+
+    // MARK: - The wall
+
+    /// The cards at the places the plan gives them. Only the cards in and
+    /// around the visible stretch are built; the rest are the plan's frames,
+    /// which is all the scroll view needs of them. The card being carried,
+    /// the selected one and the one a page is growing out of are always built.
+    private func wall(_ plan: WallPlan, viewport: CGSize) -> some View {
+        let keep = Set([nav.selectedID, drag.id, state.zoomingCard].compactMap { $0 })
+        let cascade = Date().timeIntervalSince(arrived) < 0.6
+        // The drag works from the plan on screen, and makes plans of its own
+        // the same way.
+        drag.plan = plan
+        drag.planner = { docs in WallPlan(items: docs, columns: plan.columns.count, width: plan.width, spacing: plan.spacing) }
+        return ZStack(alignment: .topLeading) {
+            ForEach(plan.visible(in: band, keeping: keep), id: \.id) { doc in
+                let frame = plan.frames[doc.id] ?? .zero
+                GalleryCard(doc: doc, isSelected: nav.selectedID == doc.id, zoom: zoom,
+                            carried: drag.id == doc.id, reorderable: reorderable)
+                    .frame(width: frame.width)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+                        if WallHeights.record(doc, width: frame.width, height: h) { measured &+= 1 }
+                    }
+                    .modifier(CardEntrance(id: doc.id, row: plan.slots[doc.id]?.row ?? 0, cascade: cascade))
+                    .background(CardFrameReporter(id: doc.id))
+                    .offset(x: frame.minX, y: frame.minY)
+            }
+        }
+        .frame(width: plan.width, height: plan.height, alignment: .topLeading)
+        .onGeometryChange(for: CGPoint.self) { $0.frame(in: .named(GalleryNavigator.coordinateSpace)).origin } action: { origin in
+            nav.wallOrigin = origin
+            drag.wallMoved(to: origin)
+            // A viewport's worth either side, so a card is built — and has
+            // said how tall it really is — before it scrolls into view.
+            let margin = max(500, viewport.height)
+            let step: CGFloat = 256
+            let lo = floor((-origin.y - margin) / step) * step
+            let hi = ceil((-origin.y + viewport.height + margin) / step) * step
+            if band.lowerBound != lo || band.upperBound != hi { band = lo ... hi }
+        }
     }
 
     private func takeSearchFocusIfAsked() {
@@ -301,38 +358,129 @@ struct GalleryView: View {
 
 // MARK: - Layout plan
 
-/// Distributes documents into columns, shortest column first, using an
-/// estimated height per card, and remembers where each one landed so the
-/// keyboard can move spatially.
-struct MasonryPlan {
+/// Where every card goes: the documents taken in order, each into the
+/// shortest column so far, at the height the card was last measured at (an
+/// estimate until it has been built once). The frames are the wall's own
+/// coordinates. The plan is also what the keyboard moves through and what a
+/// carried card is placed by.
+struct WallPlan {
     struct Slot { let column: Int; let row: Int; let midY: CGFloat }
 
+    let items: [DocumentRef]
     let columns: [[DocumentRef]]
+    let frames: [String: CGRect]
     let slots: [String: Slot]
+    let columnWidth: CGFloat
+    let spacing: CGFloat
+    let width: CGFloat
+    let height: CGFloat
+    /// The columns' heights before each card was placed — `prefixHeights[k]`
+    /// is the wall after the first k cards — which is all that decides where
+    /// a card put in at k would land.
+    let prefixHeights: [[CGFloat]]
+    /// Changes when the order of the cards or the number of columns does.
     let signature: Int
 
-    init(items: [DocumentRef], columns count: Int, spacing: CGFloat, estimate: (DocumentRef) -> CGFloat) {
+    init(items: [DocumentRef], columns count: Int, width: CGFloat, spacing: CGFloat, version: Int = 0) {
         let n = max(1, count)
+        let columnWidth = ((width - spacing * CGFloat(n - 1)) / CGFloat(n)).rounded(.down)
         var cols = Array(repeating: [DocumentRef](), count: n)
         var heights = Array(repeating: CGFloat(0), count: n)
+        var prefixes: [[CGFloat]] = [heights]
+        prefixes.reserveCapacity(items.count + 1)
+        var frames: [String: CGRect] = [:]
         var slots: [String: Slot] = [:]
         var hasher = Hasher()
         hasher.combine(n)
         for item in items {
-            var target = 0
-            for i in heights.indices where heights[i] < heights[target] { target = i }
-            let h = estimate(item)
+            let target = WallPlan.shortest(heights)
+            let h = WallHeights.height(for: item, width: columnWidth)
+            frames[item.id] = CGRect(x: CGFloat(target) * (columnWidth + spacing), y: heights[target], width: columnWidth, height: h)
             slots[item.id] = Slot(column: target, row: cols[target].count, midY: heights[target] + h / 2)
             cols[target].append(item)
             heights[target] += h + spacing
+            prefixes.append(heights)
             hasher.combine(item.id)
         }
+        self.items = items
         self.columns = cols
+        self.frames = frames
         self.slots = slots
+        self.columnWidth = columnWidth
+        self.spacing = spacing
+        self.width = width
+        self.height = max(0, (heights.max() ?? 0) - spacing)
+        self.prefixHeights = prefixes
         self.signature = hasher.finalize()
     }
 
+    /// The column a card goes into next: the shortest, the leftmost of equals.
+    private static func shortest(_ heights: [CGFloat]) -> Int {
+        var target = 0
+        for i in heights.indices where heights[i] < heights[target] { target = i }
+        return target
+    }
+
     var firstID: String? { columns.first(where: { !$0.isEmpty })?.first?.id }
+
+    /// The cards that lie in the band, and any in `keeping` wherever they are.
+    func visible(in band: ClosedRange<CGFloat>, keeping: Set<String>) -> [DocumentRef] {
+        items.filter { doc in
+            guard let f = frames[doc.id] else { return false }
+            return (f.maxY >= band.lowerBound && f.minY <= band.upperBound) || keeping.contains(doc.id)
+        }
+    }
+
+    /// Where in `items` a card `height` tall should be put in so that it
+    /// lands nearest `center` — the middle of the card as it is being carried,
+    /// in the wall's coordinates. Each card takes the shortest column at its
+    /// turn, so a place in the order is a place on the wall; this is the one
+    /// closest to where the card is held. The first of equals.
+    func insertion(nearest center: CGPoint, height: CGFloat) -> Int {
+        var best = 0
+        var bestDistance = CGFloat.infinity
+        for (k, heights) in prefixHeights.enumerated() {
+            let col = WallPlan.shortest(heights)
+            let x = CGFloat(col) * (columnWidth + spacing) + columnWidth / 2
+            let y = heights[col] + height / 2
+            let d = hypot(x - center.x, y - center.y)
+            if d < bestDistance { bestDistance = d; best = k }
+        }
+        return best
+    }
+}
+
+/// How tall each card is at each width, as the cards themselves report it —
+/// kept across openings of the wall, so the plan is right from the first
+/// pass the second time. A card not yet built at this width takes its
+/// height at the nearest width it was built at (a window being resized
+/// moves the words by a line, not a card's worth), and one never built is
+/// estimated from its lines.
+enum WallHeights {
+    /// By document (and its edit), then by column width.
+    private static var heights: [String: [Int: CGFloat]] = [:]
+
+    private static func key(_ doc: DocumentRef) -> String {
+        "\(doc.id)|\(doc.modified.timeIntervalSince1970)|\(doc.size)"
+    }
+
+    static func height(for doc: DocumentRef, width: CGFloat) -> CGFloat {
+        let w = Int(width)
+        guard let known = heights[key(doc)] else { return GalleryCard.estimatedHeight(for: doc) }
+        if let h = known[w] { return h }
+        if let near = known.min(by: { abs($0.key - w) < abs($1.key - w) }) { return near.value }
+        return GalleryCard.estimatedHeight(for: doc)
+    }
+
+    /// True when this is news — the plan should be made again.
+    static func record(_ doc: DocumentRef, width: CGFloat, height: CGFloat) -> Bool {
+        guard height > 0 else { return false }
+        let k = key(doc), w = Int(width)
+        if let h = heights[k]?[w], abs(h - height) < 0.5 { return false }
+        if heights.count > 2000 { heights.removeAll() }
+        heights[k, default: [:]][w] = height
+        return true
+    }
 }
 
 final class GalleryNavigator: ObservableObject {
@@ -343,10 +491,14 @@ final class GalleryNavigator: ObservableObject {
     static weak var current: GalleryNavigator?
 
     @Published var selectedID: String?
-    var plan: MasonryPlan?
+    var plan: WallPlan?
     weak var window: NSWindow?
+    weak var scrollView: NSScrollView?
+    /// Where the wall's top left is in the scroll view's coordinates — below
+    /// zero once scrolled.
+    var wallOrigin: CGPoint = .zero
     /// Where the cards that exist right now sit, in the scroll view's coordinates.
-    /// Cards the lazy stacks have not built yet are absent.
+    /// Cards outside the band the wall builds are absent.
     var frames: [String: CGRect] = [:]
     private var monitor: Any?
     private var lastQuery = ""
@@ -354,13 +506,12 @@ final class GalleryNavigator: ObservableObject {
 
     var selectedDocument: DocumentRef? {
         guard let id = selectedID, let plan else { return nil }
-        for col in plan.columns { if let d = col.first(where: { $0.id == id }) { return d } }
-        return nil
+        return plan.items.first(where: { $0.id == id })
     }
 
     func ensureSelection(preferring preferred: String?) {
         guard let plan else { return }
-        let all = plan.columns.flatMap { $0 }
+        let all = plan.items
         if let preferred, all.contains(where: { $0.id == preferred }) {
             if selectedID == nil { selectedID = preferred }
             return
@@ -402,17 +553,21 @@ final class GalleryNavigator: ObservableObject {
         }
     }
 
-    /// How to scroll so the card is fully on screen, or nil when it already is.
-    /// Unbuilt cards (off screen in a lazy stack) are centred.
-    func scrollAnchor(toReveal id: String, viewportHeight: CGFloat) -> UnitPoint? {
-        guard let frame = frames[id] else { return .center }
+    /// Scrolls so the card is fully on screen, if it is not: the plan knows
+    /// where every card is, built or not.
+    func reveal(_ id: String, viewportHeight: CGFloat) {
+        guard let plan, let f = plan.frames[id], let scrollView else { return }
         let margin: CGFloat = 12
-        if frame.minY < margin { return .top }
-        if frame.maxY > viewportHeight - margin {
+        let top = wallOrigin.y + f.minY, bottom = wallOrigin.y + f.maxY
+        var delta: CGFloat = 0
+        if top < margin {
+            delta = top - margin
+        } else if bottom > viewportHeight - margin {
             // Taller than the viewport: showing the top is more useful than the bottom.
-            return frame.height > viewportHeight - 2 * margin ? .top : .bottom
+            delta = f.height > viewportHeight - 2 * margin ? top - margin : bottom - (viewportHeight - margin)
         }
-        return nil
+        guard abs(delta) >= 1 else { return }
+        scrollView.glide(by: delta)
     }
 
     /// Ends editing in whatever text field has focus (the search box).
@@ -484,10 +639,218 @@ struct CardFrameReporter: View {
     }
 }
 
+// MARK: - Carrying a card
+
+/// A card being carried across the wall.
+///
+/// Like a row in the sidebar's tree, the card itself lifts under the pointer
+/// and travels with it; the wall lays itself out around the place it would
+/// take if let go, with a spring, and a faint plate marks that place. Letting
+/// go glides the card into it, and the whole wall's order is written down as
+/// the library's *Your order*. The wall watches only the order and which card
+/// is up; the lifted card alone watches the pointer, so the rest of the wall
+/// is not redrawn on every move.
+///
+/// Coordinates are the scroll view's (`GalleryNavigator.coordinateSpace`),
+/// which do not move with the scroll; the wall says where its own origin is
+/// in them, which is how the pointer is placed on the plan.
+@Observable
+final class WallDrag {
+    /// Within this much of the top or bottom of the wall the pointer scrolls it.
+    static let scrollZone: CGFloat = 48
+    /// The fastest the edges scroll, in points a frame.
+    static let scrollSpeed: CGFloat = 14
+
+    /// The document being carried, or nil.
+    private(set) var id: String?
+    /// The wall's order with the carried card where it would land now.
+    private(set) var order: [String] = []
+    /// Where the pointer is, in the scroll view's coordinates.
+    private(set) var pointer: CGPoint = .zero
+    /// Where in the card it was picked up, from its top left.
+    private(set) var grab: CGSize = .zero
+    /// How wide the card is on the wall, and how tall it was when picked up.
+    private(set) var width: CGFloat = 0
+    @ObservationIgnored private var height: CGFloat = 0
+    /// Let go, and gliding into its place before the order is written down.
+    private(set) var settling = false
+    var active: Bool { id != nil }
+
+    /// The plan the wall is laid out by right now, and how it makes one of
+    /// any order; the wall keeps both current.
+    @ObservationIgnored var plan: WallPlan?
+    @ObservationIgnored var planner: (([DocumentRef]) -> WallPlan)?
+    @ObservationIgnored var viewport: CGSize = .zero
+    @ObservationIgnored weak var scrollView: NSScrollView?
+    @ObservationIgnored private var wallOrigin: CGPoint = .zero
+    /// The order without the carried card, and its plan: the place the pointer
+    /// means is read off this, which does not change as the card moves, so
+    /// the choice cannot chase its own tail.
+    @ObservationIgnored private var rest: [String] = []
+    @ObservationIgnored private var restPlan: WallPlan?
+    @ObservationIgnored private var insertion = -1
+    @ObservationIgnored private var speed: CGFloat = 0
+    @ObservationIgnored private var scroller: Timer?
+
+    // MARK: - The carry
+
+    /// `point` is the pointer, in the scroll view's coordinates. False when
+    /// there is nothing to carry it among.
+    @discardableResult
+    func begin(id: String, at point: CGPoint) -> Bool {
+        guard !active, let plan, let planner, let frame = plan.frames[id] else { return false }
+        self.id = id
+        order = plan.items.map(\.id)
+        pointer = point
+        grab = CGSize(width: point.x - (wallOrigin.x + frame.minX), height: point.y - (wallOrigin.y + frame.minY))
+        width = frame.width
+        height = frame.height
+        settling = false
+        rest = order.filter { $0 != id }
+        restPlan = planner(plan.items.filter { $0.id != id })
+        insertion = -1
+        NSCursor.closedHand.push()
+        ScreenshotMode.note("wall drag begin \(id) at \(order.firstIndex(of: id) ?? -1) of \(order.count)")
+        return true
+    }
+
+    func update(to point: CGPoint) {
+        guard active, !settling else { return }
+        pointer = point
+        recompute()
+        scrollIfAtEdge()
+    }
+
+    func wallMoved(to origin: CGPoint) {
+        wallOrigin = origin
+    }
+
+    /// The documents in the order being tried, for the wall to lay out. One
+    /// that arrived since the pick-up goes at the end; one that went is skipped.
+    func arranged(_ docs: [DocumentRef]) -> [DocumentRef] {
+        var byID: [String: DocumentRef] = [:]
+        for d in docs { byID[d.id] = d }
+        var out = order.compactMap { byID.removeValue(forKey: $0) }
+        out += docs.filter { byID[$0.id] != nil }
+        return out
+    }
+
+    /// Let go: the card glides into its place, then `commit` writes the order
+    /// down and the carry is cleared.
+    func letGo(then commit: @escaping ([String]) -> Void) {
+        stopScrolling()
+        guard let id else { return }
+        let final = order
+        ScreenshotMode.note("wall drag end \(id) at \(final.firstIndex(of: id) ?? -1)")
+        // The wall may not have laid out the last move yet: plan it afresh.
+        let laid = planner.map { $0(arranged(plan?.items ?? [])) } ?? plan
+        let hole = laid?.frames[id] ?? CGRect(origin: CGPoint(x: pointer.x - grab.width - wallOrigin.x, y: pointer.y - grab.height - wallOrigin.y), size: .zero)
+        let home = CGPoint(x: wallOrigin.x + hole.minX + grab.width, y: wallOrigin.y + hole.minY + grab.height)
+        let finish = {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                commit(final)
+                self.clear()
+            }
+        }
+        if GlassineTextView.reduceMotion || hypot(pointer.x - home.x, pointer.y - home.y) < 1 { finish(); return }
+        settling = true
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.86)) { pointer = home }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.27, execute: finish)
+    }
+
+    func clear() {
+        stopScrolling()
+        if id != nil { NSCursor.pop() }
+        id = nil
+        order = []
+        rest = []
+        restPlan = nil
+        settling = false
+        insertion = -1
+    }
+
+    private func recompute() {
+        guard let id, let restPlan else { return }
+        // The middle of the card as it is held, on the wall.
+        let center = CGPoint(x: pointer.x - grab.width - wallOrigin.x + width / 2,
+                             y: pointer.y - grab.height - wallOrigin.y + height / 2)
+        let at = max(0, min(rest.count, restPlan.insertion(nearest: center, height: height)))
+        guard at != insertion else { return }
+        insertion = at
+        var next = rest
+        next.insert(id, at: at)
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { order = next }
+    }
+
+    // MARK: - Scrolling at the edges
+
+    private func scrollIfAtEdge() {
+        guard viewport.height > 0 else { return }
+        let zone = WallDrag.scrollZone
+        var v: CGFloat = 0
+        if pointer.y < zone {
+            v = -(zone - pointer.y) / zone
+        } else if pointer.y > viewport.height - zone {
+            v = (pointer.y - (viewport.height - zone)) / zone
+        }
+        speed = max(-1, min(1, v)) * WallDrag.scrollSpeed
+        if speed == 0 {
+            stopScrolling()
+        } else if scroller == nil {
+            let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.scrollTick() }
+            RunLoop.main.add(t, forMode: .common)
+            scroller = t
+        }
+    }
+
+    private func scrollTick() {
+        guard active, !settling, speed != 0, let scrollView else { stopScrolling(); return }
+        let before = scrollView.verticalOffset
+        scrollView.scroll(by: speed)
+        if scrollView.verticalOffset == before { stopScrolling(); return }   // the end of the wall
+        // The wall has moved under the pointer; its new origin arrives with
+        // the next layout, so place the pointer by where it will be.
+        wallOrigin.y -= scrollView.verticalOffset - before
+        recompute()
+    }
+
+    private func stopScrolling() {
+        scroller?.invalidate()
+        scroller = nil
+        speed = 0
+    }
+}
+
+/// The carried card, drawn over the wall under the pointer; the wall shows a
+/// plate where it would land. It takes no clicks — the card it stands for,
+/// still on the wall, has the drag.
+private struct LiftedCard: View {
+    @EnvironmentObject var state: AppState
+    let doc: DocumentRef
+    let drag: WallDrag
+    let zoom: Namespace.ID
+
+    var body: some View {
+        let dark = state.theme.isDark
+        GalleryCard(doc: doc, zoom: zoom, zoomSource: false, lifted: true)
+            .frame(width: drag.width)
+            .fixedSize(horizontal: false, vertical: true)
+            .scaleEffect(drag.settling ? 1 : 1.03)
+            .shadow(color: .black.opacity(drag.settling ? 0 : (dark ? 0.5 : 0.2)), radius: 18, y: 10)
+            .animation(.easeOut(duration: 0.2), value: drag.settling)
+            .offset(x: drag.pointer.x - drag.grab.width, y: drag.pointer.y - drag.grab.height)
+            .allowsHitTesting(false)
+            .transition(.identity)
+    }
+}
+
 // MARK: - Card
 
 struct GalleryCard: View {
     @EnvironmentObject var state: AppState
+    @Environment(WallDrag.self) private var drag: WallDrag?
     let doc: DocumentRef
     var isSelected: Bool = false
     let zoom: Namespace.ID
@@ -499,7 +862,16 @@ struct GalleryCard: View {
     /// into. The Timelapse can show a document twice — under the day it was
     /// made and the day it was last edited — and only one of them can be.
     var zoomSource: Bool = true
+    /// This card is being carried: on the wall it stands as the plate the
+    /// carried card will land on.
+    var carried: Bool = false
+    /// This is the carried card itself, riding over the wall.
+    var lifted: Bool = false
+    /// Whether the card can be picked up and carried into a new place on the
+    /// wall; elsewhere a card is only a button.
+    var reorderable: Bool = false
     @State private var hovering = false
+    @State private var pressed = false
 
     static let previewCap: CGFloat = 280
 
@@ -508,6 +880,9 @@ struct GalleryCard: View {
     private var starred: Bool { state.settings.isStarred(doc.id) }
     private var lines: [PreviewLine] { MarkdownPreview.lines(for: doc) }
     private var previewText: AttributedString { MarkdownPreview.attributed(for: doc, theme: theme) }
+    /// Another card is being carried over this one: it keeps still.
+    private var wallBusy: Bool { (drag?.active ?? false) && !lifted }
+    private var lit: Bool { hovering && !wallBusy }
 
     static func estimatedHeight(for doc: DocumentRef) -> CGFloat {
         let lines = MarkdownPreview.lines(for: doc)
@@ -521,96 +896,50 @@ struct GalleryCard: View {
     }
 
     private var shadowColor: Color {
+        if lifted { return .clear }
         if isSelected { return theme.accent.color.opacity(0.25) }
-        if hovering { return Color.black.opacity(theme.isDark ? 0.22 : 0.08) }
+        if lit { return Color.black.opacity(theme.isDark ? 0.22 : 0.08) }
         return .clear
     }
 
     private var borderColor: Color {
         if isSelected { return theme.accent.color.opacity(0.95) }
         if isCurrent { return theme.accent.color.opacity(0.45) }
-        return theme.text.color.opacity(hovering ? 0.18 : 0.08)
+        return theme.text.color.opacity(lit ? 0.18 : 0.08)
+    }
+
+    private var plateOpacity: Double {
+        if lifted { return theme.isDark ? 0.16 : 0.1 }
+        if isSelected { return 0.09 }
+        if pressed { return 0.1 }
+        return lit ? 0.075 : 0.05
     }
 
     var body: some View {
-        Button {
-            state.open(doc, fromCard: true)
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 6) {
-                    Text(doc.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .foregroundStyle(theme.headingColor.asColor)
-                    Spacer(minLength: 0)
-                    if starred {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(theme.accent.color)
-                            .padding(.top, 3)
-                            .transition(.scale(scale: 0.3).combined(with: .opacity))
-                    }
+        Group {
+            if reorderable, drag != nil {
+                face
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .gesture(carryGesture)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { state.open(doc, fromCard: true) }
+            } else {
+                Button {
+                    state.open(doc, fromCard: true)
+                } label: {
+                    face.contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                if lines.isEmpty {
-                    if doc.contentLoaded {
-                        Text("Empty")
-                            .font(.system(size: 11))
-                            .italic()
-                            .opacity(0.35)
-                    }
-                } else {
-                    // One run of text for the whole preview rather than a view
-                    // a line: a wall of thirty cards is thirty layouts, not
-                    // eight hundred. The fade at the foot is a mask, and a mask
-                    // is a layer of its own — so only a preview that overflows
-                    // gets one.
-                    Text(previewText)
-                        .lineSpacing(2)
-                        .foregroundStyle(theme.text.color.opacity(0.74))
-                        .frame(maxWidth: .infinity, maxHeight: previewCap, alignment: .topLeading)
-                        .clipped()
-                        .modifier(PreviewFade(on: previewOverflows))
-                }
+                .buttonStyle(.plain)
             }
-            // While the card is flying — growing into the page or shrinking back
-            // out of it — it is a plain plate; the words return once it lands.
-            .opacity(state.zoomingCard == doc.id ? 0 : 1)
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: fixedHeight, maxHeight: fixedHeight, alignment: .topLeading)
-            .background(
-                // The shadow is the plate's, not the card's: a shadow on the
-                // whole card has every word drawn again into an offscreen
-                // image, for every card, on every frame they move.
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(theme.text.color.opacity(isSelected ? 0.09 : (hovering ? 0.075 : 0.05)))
-                    .shadow(color: shadowColor, radius: isSelected ? 12 : 10, y: isSelected ? 2 : 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: isSelected ? 2 : (isCurrent ? 1.5 : 1))
-            )
-            .offset(y: hovering && !isSelected ? -2 : 0)
-            .overlay(alignment: .bottomTrailing) {
-                if hovering || isSelected {
-                    Text(caption)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .opacity(0.45)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(theme.tint.color.opacity(0.85)))
-                        .padding(10)
-                        .transition(.opacity)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .buttonStyle(.plain)
         .matchedGeometryEffect(id: doc.id, in: zoom, isSource: zoomSource)
         .onHover { hovering = $0 }
-        .animation(.spring(response: 0.28, dampingFraction: 0.72), value: hovering)
+        .animation(.spring(response: 0.28, dampingFraction: 0.72), value: lit)
+        .animation(.easeOut(duration: 0.12), value: pressed)
         .animation(.easeOut(duration: 0.12), value: isSelected)
         .animation(.easeOut(duration: 0.2), value: state.zoomingCard)
+        .animation(.easeOut(duration: 0.16), value: carried)
         .animation(.spring(response: 0.32, dampingFraction: 0.55), value: starred)
         .contextMenu {
             Button("Open") { state.open(doc, fromCard: true) }
@@ -634,6 +963,113 @@ struct GalleryCard: View {
             Divider()
             Button("Move to Trash", role: .destructive) { state.trash(doc.id) }
         }
+    }
+
+    /// The card as drawn: title, preview, plate and border. While it stands
+    /// for a card being carried it is the plate alone, dashed, where the
+    /// card will land.
+    private var face: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 6) {
+                Text(doc.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(theme.headingColor.asColor)
+                Spacer(minLength: 0)
+                if starred {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(theme.accent.color)
+                        .padding(.top, 3)
+                        .transition(.scale(scale: 0.3).combined(with: .opacity))
+                }
+            }
+            if lines.isEmpty {
+                if doc.contentLoaded {
+                    Text("Empty")
+                        .font(.system(size: 11))
+                        .italic()
+                        .opacity(0.35)
+                }
+            } else {
+                // One run of text for the whole preview rather than a view
+                // a line: a wall of thirty cards is thirty layouts, not
+                // eight hundred. The fade at the foot is a mask, and a mask
+                // is a layer of its own — so only a preview that overflows
+                // gets one.
+                Text(previewText)
+                    .lineSpacing(2)
+                    .foregroundStyle(theme.text.color.opacity(0.74))
+                    .frame(maxWidth: .infinity, maxHeight: previewCap, alignment: .topLeading)
+                    .clipped()
+                    .modifier(PreviewFade(on: previewOverflows))
+            }
+        }
+        // While the card is flying — growing into the page or shrinking back
+        // out of it — it is a plain plate; the words return once it lands.
+        .opacity(state.zoomingCard == doc.id || carried ? 0 : 1)
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: fixedHeight, maxHeight: fixedHeight, alignment: .topLeading)
+        .background(
+            // The shadow is the plate's, not the card's: a shadow on the
+            // whole card has every word drawn again into an offscreen
+            // image, for every card, on every frame they move.
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(theme.text.color.opacity(carried ? 0.03 : plateOpacity))
+                .shadow(color: shadowColor, radius: isSelected ? 12 : 10, y: isSelected ? 2 : 4)
+        )
+        .background(
+            // The lifted card is opaque to the wall it crosses: a wash of the
+            // window's tint under its plate.
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(theme.tint.color.opacity(lifted ? 0.96 : 0))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(carried ? theme.accent.color.opacity(0.45) : borderColor,
+                              style: StrokeStyle(lineWidth: isSelected ? 2 : (isCurrent ? 1.5 : 1), dash: carried ? [5, 4] : []))
+        )
+        .offset(y: lit && !isSelected ? -2 : 0)
+        .scaleEffect(pressed ? 0.985 : 1)
+        .overlay(alignment: .bottomTrailing) {
+            if (lit || isSelected) && !carried {
+                Text(caption)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .opacity(0.45)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(theme.tint.color.opacity(0.85)))
+                    .padding(10)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    // MARK: - Carrying
+
+    /// Pressed, the card is a button; moved, it lifts and travels with the
+    /// pointer while the wall makes room (WallDrag). Points are the scroll
+    /// view's, which the pointer can leave without the drag ending.
+    private var carryGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(GalleryNavigator.coordinateSpace))
+            .onChanged { v in
+                let moved = hypot(v.translation.width, v.translation.height)
+                if drag?.id != doc.id {
+                    if moved < 4 { pressed = true; return }
+                    guard let drag, !drag.active, drag.begin(id: doc.id, at: v.startLocation) else { return }
+                    pressed = false
+                }
+                drag?.update(to: v.location)
+            }
+            .onEnded { v in
+                pressed = false
+                if let drag, drag.id == doc.id {
+                    drag.letGo { order in state.placeOnWall(order) }
+                } else if hypot(v.translation.width, v.translation.height) < 4 {
+                    state.open(doc, fromCard: true)
+                }
+            }
     }
 
     private var caption: String {
@@ -917,17 +1353,19 @@ struct PreviewLineView: View {
 
 // MARK: - Card entrance
 
-/// Cards arrive in a soft cascade, each a beat after the one above it, the
-/// first time they show; after that they stay put. The card a page is
-/// shrinking back into skips the cascade — it is already on its way.
+/// Cards arrive in a soft cascade, each a beat after the one above it, when
+/// the wall first shows; a card built later — scrolled to — is simply there.
+/// The card a page is shrinking back into skips the cascade — it is already
+/// on its way.
 private struct CardEntrance: ViewModifier {
     @EnvironmentObject var state: AppState
     let id: String
     let row: Int
+    let cascade: Bool
     @State private var shown = false
 
     private var immediate: Bool {
-        state.zoomingCard == id || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        !cascade || state.zoomingCard == id || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
     func body(content: Content) -> some View {

@@ -75,5 +75,8 @@ case "${1:-all}" in
   gallery) DELAY=9 shoot views-gallery -glassine.shootScript "3.0:gallery;6.0:open:Untitled.md;7.5:gallery" ;;
   # A page switched away from with unsaved text: the save and the first-line rename land off the main thread.
   switch) DELAY=6 shoot views-switch -glassine.shootScript "0.8:select:2,15;1.0:type@0:Renamed by its first line;1.8:open:Garden.md;3.4:gallery"; ls "$LIB" ;;
+  # The wall by name, sorted so the cards' places are known; then a card carried to another place on it: DRAG=x1,y1,x2,y2 in window points. The log says the order before and after.
+  wall) EXTRA_JSON='"sortDocumentsBy":"name",' DELAY=${DELAY:-4} shoot views-wall -glassine.shootScript "0.4:gallery;${WALL_SCRIPT:-}" "${@:2}"; grep -E "order|wall drag|gallery" "$T/log.txt" | tail -6 ;;
+  walldrag) EXTRA_JSON='"sortDocumentsBy":"name",' DELAY=${DELAY:-4.5} shoot views-walldrag -glassine.shootScript "0.4:gallery;1.4:order;1.6:drag:${DRAG:-420,230,760,230};3.4:order" "${@:2}"; grep -E "order|wall drag" "$T/log.txt" | tail -4 ;;
   all) "$0" timelapse; "$0" everything; "$0" day; "$0" carousel; "$0" look; "$0" tour 2; "$0" tour 10 ;;
 esac

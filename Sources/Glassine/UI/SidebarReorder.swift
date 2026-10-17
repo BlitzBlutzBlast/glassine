@@ -172,11 +172,7 @@ final class SidebarDrag {
     /// How far the tree is scrolled from its top, in points.
     private var scrollOffset: CGFloat {
         #if os(macOS)
-        guard let sv = scrollView else { return 0 }
-        let clip = sv.contentView
-        if sv.documentView?.isFlipped ?? true { return clip.bounds.origin.y }
-        let reach = max(0, (sv.documentView?.frame.height ?? 0) - clip.bounds.height)
-        return reach - clip.bounds.origin.y
+        return scrollView?.verticalOffset ?? 0
         #else
         return scrollView?.contentOffset.y ?? 0
         #endif
@@ -184,17 +180,7 @@ final class SidebarDrag {
 
     private func scroll(by delta: CGFloat) {
         #if os(macOS)
-        guard let sv = scrollView, let doc = sv.documentView else { return }
-        let clip = sv.contentView
-        let reach = max(0, doc.frame.height - clip.bounds.height)
-        var origin = clip.bounds.origin
-        if doc.isFlipped {
-            origin.y = max(0, min(reach, origin.y + delta))
-        } else {
-            origin.y = max(0, min(reach, origin.y - delta))
-        }
-        clip.scroll(to: origin)
-        sv.reflectScrolledClipView(clip)
+        scrollView?.scroll(by: delta)
         #else
         guard let sv = scrollView else { return }
         let reach = max(0, sv.contentSize.height - sv.bounds.height)
@@ -204,6 +190,52 @@ final class SidebarDrag {
         #endif
     }
 }
+
+#if os(macOS)
+extension NSScrollView {
+    /// How far the content is scrolled from its top, in points.
+    var verticalOffset: CGFloat {
+        let clip = contentView
+        if documentView?.isFlipped ?? true { return clip.bounds.origin.y }
+        let reach = max(0, (documentView?.frame.height ?? 0) - clip.bounds.height)
+        return reach - clip.bounds.origin.y
+    }
+
+    /// Scrolls the content by `delta` points, down for positive, no further
+    /// than its ends.
+    func scroll(by delta: CGFloat) {
+        guard let doc = documentView else { return }
+        let clip = contentView
+        let reach = max(0, doc.frame.height - clip.bounds.height)
+        var origin = clip.bounds.origin
+        if doc.isFlipped {
+            origin.y = max(0, min(reach, origin.y + delta))
+        } else {
+            origin.y = max(0, min(reach, origin.y - delta))
+        }
+        clip.scroll(to: origin)
+        reflectScrolledClipView(clip)
+    }
+
+    /// Scrolls by `delta` over a few frames, easing out, the way a card is
+    /// brought on screen; at once when motion is reduced.
+    func glide(by delta: CGFloat, duration: TimeInterval = 0.18) {
+        if GlassineTextView.reduceMotion || abs(delta) < 2 { scroll(by: delta); return }
+        let start = CACurrentMediaTime()
+        var done: CGFloat = 0
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            let x = min(1, (CACurrentMediaTime() - start) / duration)
+            let eased = 1 - pow(1 - x, 3)
+            let target = delta * eased
+            self.scroll(by: target - done)
+            done = target
+            if x >= 1 { t.invalidate() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+}
+#endif
 
 /// A row's place in its folder's list, for the rows that can be carried.
 struct ReorderSlot {
@@ -216,28 +248,41 @@ struct ReorderSlot {
 
 // MARK: - Finding the scroll view
 
-/// Sits in the tree's background and hands the drag the scroll view around
-/// it, which is how the edges scroll and how the lift knows how far the tree
-/// has moved under the pointer.
+#if os(macOS)
+typealias HostScrollView = NSScrollView
+#else
+typealias HostScrollView = UIScrollView
+#endif
+
+/// Sits in a scrolling view's content and hands out the scroll view around
+/// it, which is how a drag scrolls at the edges and how a lift knows how far
+/// the content has moved under the pointer.
 struct ScrollHostFinder: HostViewRepresentable {
-    let drag: SidebarDrag
+    let found: (HostScrollView?) -> Void
+
+    init(_ found: @escaping (HostScrollView?) -> Void) { self.found = found }
 
     #if os(macOS)
-    func makeNSView(context: Context) -> Probe { let v = Probe(); v.drag = drag; return v }
-    func updateNSView(_ view: Probe, context: Context) { view.drag = drag; view.report() }
+    func makeNSView(context: Context) -> Probe { let v = Probe(); v.found = found; return v }
+    func updateNSView(_ view: Probe, context: Context) { view.found = found; view.report() }
     #else
-    func makeUIView(context: Context) -> Probe { let v = Probe(); v.drag = drag; return v }
-    func updateUIView(_ view: Probe, context: Context) { view.drag = drag; view.report() }
+    func makeUIView(context: Context) -> Probe { let v = Probe(); v.found = found; return v }
+    func updateUIView(_ view: Probe, context: Context) { view.found = found; view.report() }
     #endif
 
     final class Probe: HostView {
-        weak var drag: SidebarDrag?
+        var found: ((HostScrollView?) -> Void)?
+        /// Told once per scroll view, not on every layout.
+        private weak var last: HostScrollView?
         #if os(macOS)
         override var isFlipped: Bool { true }
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); report() }
         override func layout() { super.layout(); report() }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        func report() { drag?.scrollView = enclosingScrollView }
+        func report() {
+            let sv = enclosingScrollView
+            if sv !== last { last = sv; found?(sv) }
+        }
         #else
         override func didMoveToWindow() { super.didMoveToWindow(); report() }
         override func layoutSubviews() { super.layoutSubviews(); report() }
@@ -245,7 +290,8 @@ struct ScrollHostFinder: HostViewRepresentable {
         func report() {
             var v: UIView? = superview
             while let s = v, !(s is UIScrollView) { v = s.superview }
-            drag?.scrollView = v as? UIScrollView
+            let sv = v as? UIScrollView
+            if sv !== last { last = sv; found?(sv) }
         }
         #endif
     }

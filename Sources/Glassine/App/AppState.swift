@@ -608,20 +608,15 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// The order the rows were dragged into. Documents that were never placed
-    /// come first, newest edit at the top — a new document belongs at the top
-    /// until it is put somewhere. Across folders (the mosaic shows them all)
-    /// the top level comes first, then the folders by name.
+    /// The order the documents were put in by hand — one list for the whole
+    /// library, which the wall shows entire and each folder of the sidebar
+    /// shows its part of. Documents that were never placed come first,
+    /// newest edit at the top: a new document belongs at the top until it is
+    /// put somewhere.
     private func handSorted(_ docs: [DocumentRef]) -> [DocumentRef] {
         var rank: [String: Int] = [:]
-        for (_, list) in settings.data.documentOrder {
-            for (i, id) in list.enumerated() where rank[id] == nil { rank[id] = i }
-        }
+        for (i, id) in settings.data.handOrder.enumerated() where rank[id] == nil { rank[id] = i }
         return docs.sorted { a, b in
-            if a.folder != b.folder {
-                if a.folder.isEmpty != b.folder.isEmpty { return a.folder.isEmpty }
-                return a.folder.localizedStandardCompare(b.folder) == .orderedAscending
-            }
             switch (rank[a.id], rank[b.id]) {
             case let (x?, y?): return x < y
             case (nil, nil): return a.modified > b.modified
@@ -631,31 +626,47 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// A row dragged to a new place among its folder's documents. `shown` is
-    /// the order the folder's rows had on screen, whatever sort made it; that
-    /// order, with this one move, becomes the hand-made order and the sort
-    /// switches to it, so what was dragged stays put. ⌘Z puts it back.
+    /// Every document in the order it stands on screen under the sort in
+    /// force. A drag starts from this, so that when the sort switches to
+    /// *Your order* only what was dragged has changed places.
+    private var standingOrder: [String] { sorted(library.allDocuments).map(\.id) }
+
+    /// A row dragged to a new place among its folder's rows. `shown` is the
+    /// order the folder's rows had on screen, whatever sort made it, and
+    /// `index` the row among them it was let go in; the document takes that
+    /// place in the library's one order — just before the row now there, or
+    /// after the last — and the sort switches to it. ⌘Z puts it back.
     func placeDocument(_ id: String, at index: Int, in folder: String, shown: [DocumentRef]) {
-        var order = settings.data.documentOrder
-        // The first drag out of another sort keeps every folder as it stood
-        // under that sort, so nothing else in the tree moves when the sort
-        // switches; only the dragged row has changed places.
-        if settings.data.sortDocumentsBy != .manual {
-            for f in [library.root] + library.root.allFolders where order[f.id] == nil {
-                order[f.id] = sorted(f.documents).map(\.id)
-            }
+        var order = standingOrder.filter { $0 != id }
+        let siblings = shown.map(\.id).filter { $0 != id }
+        guard !siblings.isEmpty else { return }
+        let at: Int
+        if index < siblings.count, let before = order.firstIndex(of: siblings[index]) {
+            at = before
+        } else if let last = order.firstIndex(of: siblings[siblings.count - 1]) {
+            at = last + 1
+        } else {
+            at = order.count
         }
-        var list = shown.map(\.id).filter { $0 != id }
-        list.insert(id, at: max(0, min(index, list.count)))
-        order[folder] = list
-        setDocumentOrder(order, sort: .manual)
+        order.insert(id, at: at)
+        setHandOrder(order, sort: .manual)
     }
 
-    private func setDocumentOrder(_ order: [String: [String]], sort: SortMode) {
-        let wasOrder = settings.data.documentOrder, wasSort = settings.data.sortDocumentsBy
-        settings.data.documentOrder = order
+    /// The wall's cards as they were left after a drag — every document that
+    /// is not on the Shelf, top left to bottom right. The Shelf's documents
+    /// keep their own order after them.
+    func placeOnWall(_ wall: [String]) {
+        let onWall = Set(wall)
+        let order = wall + standingOrder.filter { !onWall.contains($0) }
+        guard order != settings.data.handOrder || settings.data.sortDocumentsBy != .manual else { return }
+        setHandOrder(order, sort: .manual)
+    }
+
+    private func setHandOrder(_ order: [String], sort: SortMode) {
+        let wasOrder = settings.data.handOrder, wasSort = settings.data.sortDocumentsBy
+        settings.data.handOrder = order
         settings.data.sortDocumentsBy = sort
-        libraryUndo.registerUndo(withTarget: self) { s in s.setDocumentOrder(wasOrder, sort: wasSort) }
+        libraryUndo.registerUndo(withTarget: self) { s in s.setHandOrder(wasOrder, sort: wasSort) }
         libraryUndo.setActionName("Reorder")
     }
 

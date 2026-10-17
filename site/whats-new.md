@@ -6,8 +6,9 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
-## 0.2.28 — October 16, 2026
+## 0.2.28 — October 17, 2026
 
+- **Arrange the wall by hand.** Pick up a card in All Documents and carry it: the wall makes room with a spring, and where you let go is where it stays. That becomes *Your order* — one order for the whole library, the sidebar's folders included. [All Documents.](https://docs.glassine.ink/library/all-documents#your-order)
 - **All Documents comes up at once.** On a library of ninety documents the wall took a second and a half to appear; it takes a tenth of one now. Each card used to set every line of its preview as a view of its own, under a shadow that drew the whole card again.
 - **Lighter under motion.** The window no longer works out, on every frame of every animation, where it could be dragged by. It is dragged by its top edge now, the way a window is; the glass itself is no longer a handle.
 

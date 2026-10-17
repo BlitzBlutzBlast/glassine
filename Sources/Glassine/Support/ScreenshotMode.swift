@@ -302,6 +302,14 @@ enum ScreenshotMode {
         case "commit": app.commitCarousel()
         case "prev": app.switchToPreviousPage()
         case "gallery": mark("gallery"); app.showGallery()
+        case "nav":
+            // The wall's selection moved as by an arrow key: "nav:down", a count after a comma ("nav:down,8").
+            let parts = arg.split(separator: ",")
+            let dir: GalleryNavigator.Direction = switch parts.first.map(String.init) { case "up": .up; case "left": .left; case "right": .right; default: .down }
+            for _ in 0..<(parts.dropFirst().first.flatMap { Int($0) } ?? 1) { GalleryNavigator.current?.move(dir) }
+        case "order":
+            // The wall's order as it stands, and the sort that makes it, for a check.
+            note("order (\(app.settings.data.sortDocumentsBy.rawValue)): " + app.sorted(app.activeDocuments).map(\.title).joined(separator: " | "))
         case "daily": app.showDaily()
         case "day": if let k = Int(arg) { app.showDay(AppState.date(forDayKey: k)) }   // a day's wall, by its key (20261015)
         case "scope": app.settings.data.timelapseScope = arg == "everything" ? .everything : .notes

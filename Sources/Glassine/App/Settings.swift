@@ -34,9 +34,9 @@ enum CounterMode: String, Codable, CaseIterable, Identifiable {
 
 enum SortMode: String, Codable, CaseIterable, Identifiable {
     case modified, name, created
-    /// The order the documents were dragged into, folder by folder
-    /// (`SettingsData.documentOrder`). Dragging a row in the sidebar's tree
-    /// switches to this; a document not yet placed sits at the top.
+    /// The order the documents were dragged into (`SettingsData.handOrder`).
+    /// Dragging a row in the sidebar's tree, or a card on the All Documents
+    /// wall, switches to this; a document not yet placed sits at the top.
     case manual
     var id: String { rawValue }
     var label: String {
@@ -179,9 +179,13 @@ struct SettingsData: Codable, Equatable {
     var backdropGrain: Double = 0.085
     var expandedFolders: [String] = []
     var starred: [String] = []
-    /// Where each folder's documents sit when sorted by hand: folder path →
-    /// document paths, top first. Documents that are not listed come first,
-    /// newest edit at the top, the way a new document should.
+    /// The documents in the order they were put by hand — one order for the
+    /// whole library: the wall shows all of it, a folder in the sidebar shows
+    /// its own documents in the same order. Documents that are not listed
+    /// come first, newest edit at the top, the way a new document should.
+    var handOrder: [String] = []
+    /// Before October 2026 the order was kept folder by folder. Read once
+    /// and folded into `handOrder` (see `init(from:)`); empty from then on.
     var documentOrder: [String: [String]] = [:]
     /// The month calendar under the sidebar's top rows, folded away.
     var calendarCollapsed: Bool = false
@@ -226,6 +230,7 @@ struct SettingsData: Codable, Equatable {
         p.looksAdopted = false
         p.expandedFolders = []
         p.starred = []
+        p.handOrder = []
         p.documentOrder = [:]
         p.calendarCollapsed = false
         p.timelapseScope = .notes
@@ -253,6 +258,7 @@ struct SettingsData: Codable, Equatable {
         p.looksAdopted = other.looksAdopted
         p.expandedFolders = other.expandedFolders
         p.starred = other.starred
+        p.handOrder = other.handOrder
         p.documentOrder = other.documentOrder
         p.calendarCollapsed = other.calendarCollapsed
         p.timelapseScope = other.timelapseScope
@@ -331,7 +337,19 @@ struct SettingsData: Codable, Equatable {
         backdropGrain = try c.decodeIfPresent(Double.self, forKey: .backdropGrain) ?? d.backdropGrain
         expandedFolders = try c.decodeIfPresent([String].self, forKey: .expandedFolders) ?? d.expandedFolders
         starred = try c.decodeIfPresent([String].self, forKey: .starred) ?? d.starred
-        documentOrder = try c.decodeIfPresent([String: [String]].self, forKey: .documentOrder) ?? d.documentOrder
+        handOrder = try c.decodeIfPresent([String].self, forKey: .handOrder) ?? d.handOrder
+        let folderOrder = try c.decodeIfPresent([String: [String]].self, forKey: .documentOrder) ?? [:]
+        if handOrder.isEmpty, !folderOrder.isEmpty {
+            // The order used to be kept folder by folder. Fold it into one:
+            // the top level first, then the folders by name — the order the
+            // old wall showed them in — so nothing moves on the day of the change.
+            let folders = folderOrder.keys.sorted { a, b in
+                if a.isEmpty != b.isEmpty { return a.isEmpty }
+                return a.localizedStandardCompare(b) == .orderedAscending
+            }
+            handOrder = folders.flatMap { folderOrder[$0] ?? [] }
+        }
+        documentOrder = [:]
         calendarCollapsed = try c.decodeIfPresent(Bool.self, forKey: .calendarCollapsed) ?? d.calendarCollapsed
         timelapseScope = try c.decodeIfPresent(TimelapseScope.self, forKey: .timelapseScope) ?? d.timelapseScope
         recents = try c.decodeIfPresent([String: Date].self, forKey: .recents) ?? d.recents
@@ -433,16 +451,11 @@ final class AppSettings: ObservableObject {
         }
         data.starred = data.starred.map { $0.hasPrefix(oldPrefix) ? newPrefix + $0.dropFirst(oldPrefix.count) : $0 }
         data.expandedFolders = data.expandedFolders.map { $0 == old ? new : ($0.hasPrefix(oldPrefix) ? newPrefix + $0.dropFirst(oldPrefix.count) : $0) }
-        // The hand-made order follows a renamed document, and a renamed
-        // folder's list follows the folder. A document moved to another
-        // folder leaves its old list; it joins the new one at the top.
-        var order: [String: [String]] = [:]
-        for (folder, list) in data.documentOrder {
-            let key = folder == old ? new : (folder.hasPrefix(oldPrefix) ? newPrefix + folder.dropFirst(oldPrefix.count) : folder)
-            let moved = list.map { $0 == old ? new : ($0.hasPrefix(oldPrefix) ? newPrefix + $0.dropFirst(oldPrefix.count) : $0) }
-            order[key] = moved.filter { SettingsData.parentFolder(of: $0) == key }
-        }
-        data.documentOrder = order
+        // The hand-made order follows a renamed or moved document, and a
+        // renamed folder's documents, to where they went: the order is one
+        // list for the whole library, so a move between folders keeps a
+        // document's place in it.
+        data.handOrder = data.handOrder.map { $0 == old ? new : ($0.hasPrefix(oldPrefix) ? newPrefix + $0.dropFirst(oldPrefix.count) : $0) }
     }
 
     func forgetPath(_ relPath: String) {
@@ -451,13 +464,7 @@ final class AppSettings: ObservableObject {
         data.caretPositions.removeValue(forKey: relPath)
         if data.lastOpenedDocument == relPath { data.lastOpenedDocument = nil }
         data.openPages.removeAll { $0 == relPath || $0.hasPrefix(relPath + "/") }
-        for (folder, list) in data.documentOrder {
-            if folder == relPath || folder.hasPrefix(relPath + "/") {
-                data.documentOrder.removeValue(forKey: folder)
-            } else if list.contains(relPath) {
-                data.documentOrder[folder] = list.filter { $0 != relPath }
-            }
-        }
+        data.handOrder.removeAll { $0 == relPath || $0.hasPrefix(relPath + "/") }
     }
 
 
