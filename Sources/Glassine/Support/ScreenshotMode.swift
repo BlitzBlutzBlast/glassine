@@ -190,6 +190,19 @@ enum ScreenshotMode {
     private static var timeLog: [String] = []
     private static func now() -> Double { CACurrentMediaTime() - clockStart }
 
+    /// A stopwatch for a check shot: `mark("gallery")` when a view is asked
+    /// for, `lap("gallery", "up")` when it has drawn — the time between goes
+    /// to log.txt, in milliseconds. Nothing outside a shot.
+    private static var marks: [String: CFTimeInterval] = [:]
+    static func mark(_ name: String) {
+        guard isActive else { return }
+        marks[name] = CACurrentMediaTime()
+    }
+    static func lap(_ name: String, _ what: String) {
+        guard isActive, let start = marks[name] else { return }
+        note(String(format: "%@ %@ after %.0f ms", name, what, (CACurrentMediaTime() - start) * 1000))
+    }
+
     private static func schedule(_ script: String) {
         clockStart = CACurrentMediaTime()
         let base = DispatchTime.now()
@@ -249,6 +262,22 @@ enum ScreenshotMode {
                 window.makeKey(); post(.leftMouseDown, at: p, in: window)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { post(.leftMouseUp, at: p, in: window) }
             }
+        case "drag":
+            // A press at one point in the window carried to another over half a
+            // second, in points from the top left: "drag:x1,y1,x2,y2".
+            let parts = arg.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 4, let window = mainWindow() {
+                let h = window.frame.height
+                let from = NSPoint(x: parts[0], y: h - parts[1]), to = NSPoint(x: parts[2], y: h - parts[3])
+                window.makeKey(); post(.leftMouseDown, at: from, in: window)
+                let steps = 12
+                for i in 1...steps {
+                    let f = Double(i) / Double(steps)
+                    let p = NSPoint(x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.04 * Double(i)) { post(.leftMouseDragged, at: p, in: window) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.04 * Double(steps) + 0.1) { post(.leftMouseUp, at: to, in: window) }
+            }
         case "key":
             guard let editor = GlassineTextView.current else { return }
             switch arg {
@@ -272,7 +301,7 @@ enum ScreenshotMode {
         case "step": app.stepCarousel(backward: arg == "back")
         case "commit": app.commitCarousel()
         case "prev": app.switchToPreviousPage()
-        case "gallery": app.showGallery()
+        case "gallery": mark("gallery"); app.showGallery()
         case "daily": app.showDaily()
         case "day": if let k = Int(arg) { app.showDay(AppState.date(forDayKey: k)) }   // a day's wall, by its key (20261015)
         case "scope": app.settings.data.timelapseScope = arg == "everything" ? .everything : .notes

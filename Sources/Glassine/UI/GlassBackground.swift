@@ -91,33 +91,6 @@ struct GlassBackdrop: View {
             GrainOverlay(opacity: backdrop.isDesktop ? theme.grain : grain)
         }
         .ignoresSafeArea()
-        .modifier(DragsWindowByGlass())
-    }
-}
-
-/// The window, dragged by its glass. On macOS 15 and later the glass itself
-/// — this backdrop, and the sidebar's own ground — carries SwiftUI's
-/// window-drag gesture: a drag that lands on it, which is to say on no
-/// control, row, card or page, moves the window. The gesture lives on those
-/// layers and not at the root of the content, because at the root it took
-/// every drag before the rows underneath could claim theirs (the sidebar's
-/// rows could no longer be carried into order). On macOS 14 AppKit does it
-/// the old way (`isMovableByWindowBackground`), which has the window work
-/// out in advance, and again on every change of layout, which parts of its
-/// content are *not* draggable — a walk of the whole SwiftUI tree, on every
-/// frame of every animation (a tenth of the main thread in a sample).
-/// Asking at the drag costs nothing.
-struct DragsWindowByGlass: ViewModifier {
-    static var usesGesture: Bool {
-        if #available(macOS 15, *) { return true } else { return false }
-    }
-
-    func body(content: Content) -> some View {
-        if #available(macOS 15, *) {
-            content.gesture(WindowDragGesture())
-        } else {
-            content
-        }
     }
 }
 
@@ -158,8 +131,15 @@ struct WindowConfigurator: NSViewRepresentable {
                 window.titlebarAppearsTransparent = true
                 window.titleVisibility = .hidden
                 window.styleMask.insert(.fullSizeContentView)
-                // See DragsWindowByGlass: the gesture where there is one.
-                window.isMovableByWindowBackground = !DragsWindowByGlass.usesGesture
+                // The window is dragged by its top edge, the way a window is,
+                // and not by its glass. Movable-by-background has AppKit work
+                // out, on every change of layout, which parts of the content
+                // are *not* draggable — for a SwiftUI window a walk of the
+                // whole view tree, on every frame of every animation (a tenth
+                // of the main thread in a sample). SwiftUI's WindowDragGesture
+                // in its place took the drags the sidebar's rows needed to be
+                // carried into order, from wherever it was put, so neither.
+                window.isMovableByWindowBackground = false
                 window.titlebarSeparatorStyle = .none
                 window.toolbarStyle = .unifiedCompact
                 // Naming the frame restores the saved one at once, but SwiftUI then sizes

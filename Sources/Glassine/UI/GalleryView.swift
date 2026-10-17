@@ -111,6 +111,10 @@ struct GalleryView: View {
             .onAppear {
                 nav.plan = plan
                 nav.ensureSelection(preferring: state.document?.relativePath)
+                // For a check shot: the wall is on screen once the pass that
+                // built it has been committed, which is the next turn of the loop.
+                ScreenshotMode.lap("gallery", "appeared")
+                DispatchQueue.main.async { ScreenshotMode.lap("gallery", "up") }
             }
             .onChange(of: plan.signature) { _, _ in
                 nav.plan = plan
@@ -503,6 +507,7 @@ struct GalleryCard: View {
     private var isCurrent: Bool { state.document?.relativePath == doc.id }
     private var starred: Bool { state.settings.isStarred(doc.id) }
     private var lines: [PreviewLine] { MarkdownPreview.lines(for: doc) }
+    private var previewText: AttributedString { MarkdownPreview.attributed(for: doc, theme: theme) }
 
     static func estimatedHeight(for doc: DocumentRef) -> CGFloat {
         let lines = MarkdownPreview.lines(for: doc)
@@ -555,24 +560,17 @@ struct GalleryCard: View {
                             .opacity(0.35)
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(lines) { line in
-                            PreviewLineView(line: line, theme: theme)
-                        }
-                    }
-                    .foregroundStyle(theme.text.color.opacity(0.74))
-                    .frame(maxWidth: .infinity, maxHeight: previewCap, alignment: .topLeading)
-                    .clipped()
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black, location: previewOverflows ? 0.70 : 1),
-                                .init(color: previewOverflows ? .clear : .black, location: 1),
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
+                    // One run of text for the whole preview rather than a view
+                    // a line: a wall of thirty cards is thirty layouts, not
+                    // eight hundred. The fade at the foot is a mask, and a mask
+                    // is a layer of its own — so only a preview that overflows
+                    // gets one.
+                    Text(previewText)
+                        .lineSpacing(2)
+                        .foregroundStyle(theme.text.color.opacity(0.74))
+                        .frame(maxWidth: .infinity, maxHeight: previewCap, alignment: .topLeading)
+                        .clipped()
+                        .modifier(PreviewFade(on: previewOverflows))
                 }
             }
             // While the card is flying — growing into the page or shrinking back
@@ -581,14 +579,17 @@ struct GalleryCard: View {
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: fixedHeight, maxHeight: fixedHeight, alignment: .topLeading)
             .background(
+                // The shadow is the plate's, not the card's: a shadow on the
+                // whole card has every word drawn again into an offscreen
+                // image, for every card, on every frame they move.
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(theme.text.color.opacity(isSelected ? 0.09 : (hovering ? 0.075 : 0.05)))
+                    .shadow(color: shadowColor, radius: isSelected ? 12 : 10, y: isSelected ? 2 : 4)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: isSelected ? 2 : (isCurrent ? 1.5 : 1))
             )
-            .shadow(color: shadowColor, radius: isSelected ? 12 : 10, y: isSelected ? 2 : 4)
             .offset(y: hovering && !isSelected ? -2 : 0)
             .overlay(alignment: .bottomTrailing) {
                 if hovering || isSelected {
@@ -684,6 +685,96 @@ enum MarkdownPreview {
         return result
     }
 
+    private static var attributedCache: [String: AttributedString] = [:]
+
+    /// The preview as one run of text — the lines set in their kinds, one
+    /// under the other — for a card to lay out in one go. Cached with the
+    /// lines, per theme.
+    static func attributed(for doc: DocumentRef, theme: Theme) -> AttributedString {
+        let lines = lines(for: doc)
+        guard !lines.isEmpty else { return AttributedString() }
+        let key = "\(doc.id)|\(doc.modified.timeIntervalSince1970)|\(doc.size)|\(theme.accent.hex)|\((theme.heading ?? theme.text).hex)|\(theme.text.hex)"
+        if let hit = attributedCache[key] { return hit }
+        let result = attributed(lines, theme: theme)
+        if attributedCache.count > 600 { attributedCache.removeAll() }
+        attributedCache[key] = result
+        return result
+    }
+
+    /// A line of the preview cut to about what its view used to show — two
+    /// or three wrapped lines of forty-six characters — with an ellipsis.
+    private static func clipped(_ text: AttributedString, lines: Int, width: Int = 46) -> AttributedString {
+        let cap = lines * width
+        let chars = text.characters
+        guard chars.count > cap else { return text }
+        let end = chars.index(chars.startIndex, offsetBy: cap - 1)
+        var cut = AttributedString(text[text.startIndex..<end])
+        cut.append(AttributedString("…"))
+        return cut
+    }
+
+    static func attributed(_ lines: [PreviewLine], theme: Theme) -> AttributedString {
+        var out = AttributedString()
+        let body = Font.system(size: 10.5)
+        let accent = theme.accent.color
+        var first = true
+        for line in lines {
+            if !first { out.append(AttributedString("\n")) }
+            first = false
+            switch line.kind {
+            case .blank:
+                var gap = AttributedString(" ")
+                gap.font = .system(size: 3)
+                out.append(gap)
+            case .rule:
+                var rule = AttributedString("―――")
+                rule.font = .system(size: 8)
+                rule.foregroundColor = theme.text.color.opacity(0.3)
+                out.append(rule)
+            case .heading(let level):
+                var t = clipped(line.text, lines: 2, width: 40)
+                t.font = .system(size: level == 1 ? 12.5 : (level == 2 ? 11.5 : 11), weight: .semibold)
+                t.foregroundColor = theme.headingColor.asColor.opacity(0.95)
+                out.append(t)
+            case .bullet:
+                var dot = AttributedString("•  ")
+                dot.font = body
+                dot.foregroundColor = accent
+                out.append(dot)
+                var t = clipped(line.text, lines: 2)
+                t.font = body
+                out.append(t)
+            case .numbered(let n):
+                var num = AttributedString(n + " ")
+                num.font = body.monospacedDigit()
+                num.foregroundColor = accent
+                out.append(num)
+                var t = clipped(line.text, lines: 2)
+                t.font = body
+                out.append(t)
+            case .quote:
+                var bar = AttributedString("▏ ")
+                bar.font = body
+                bar.foregroundColor = accent.opacity(0.6)
+                out.append(bar)
+                var t = clipped(line.text, lines: 2)
+                t.font = body.italic()
+                t.foregroundColor = theme.text.color.opacity(0.6)
+                out.append(t)
+            case .code:
+                var t = clipped(line.text, lines: 1, width: 56)
+                t.font = .system(size: 9.5, design: .monospaced)
+                t.foregroundColor = theme.text.color.opacity(0.63)
+                out.append(t)
+            case .body:
+                var t = clipped(line.text, lines: 3)
+                t.font = body
+                out.append(t)
+            }
+        }
+        return out
+    }
+
     private static func match(_ regex: NSRegularExpression, _ s: String) -> NSTextCheckingResult? {
         regex.firstMatch(in: s, options: [], range: NSRange(location: 0, length: (s as NSString).length))
     }
@@ -756,6 +847,23 @@ enum MarkdownPreview {
     }
 }
 
+/// The fade at the foot of a preview that has more to it than the card shows.
+private struct PreviewFade: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on {
+            content.mask(
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.70), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            )
+        } else {
+            content
+        }
+    }
+}
+
+/// One line of a preview as a view of its own — the fanned pages still draw
+/// theirs this way; the wall sets a card's lines as one run of text.
 struct PreviewLineView: View {
     let line: PreviewLine
     let theme: Theme

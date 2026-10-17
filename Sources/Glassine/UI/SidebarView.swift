@@ -431,9 +431,6 @@ struct SidebarView: View {
             }
         }
         .ignoresSafeArea()
-        // The sidebar's ground is glass too: a drag on it, beside the rows
-        // rather than on one, moves the window (see DragsWindowByGlass).
-        .modifier(DragsWindowByGlass())
     }
 }
 

@@ -26,6 +26,15 @@ printf '# Garden\n\nTomatoes in, late. The fig took.\n' > "$LIB/Garden.md"; touc
 printf '# Letter to M.\n\nDear M., the house is quiet and the light comes in at four.\n' > "$LIB/Letter to M.md"; touch -t "$(stamp 1)" "$LIB/Letter to M.md"
 printf '# Ideas\n\n- A timer that only counts the good hours\n- The sentence as a unit of attention\n' > "$LIB/Ideas.md"; touch -t "$(stamp 3)" "$LIB/Ideas.md"
 printf '# Today, untitled\n\nA page begun this morning.\n' > "$LIB/Untitled.md"
+mkdir -p "$LIB/Shelf"; printf '# Old draft\n\nSet aside.\n' > "$LIB/Shelf/Old draft.md"; printf '# Older draft\n\nSet aside too.\n' > "$LIB/Shelf/Older draft.md"
+# BIG=1: eighty more documents with full previews, for timing All Documents on a library like a real one.
+if [[ -n "${BIG:-}" ]]; then
+  for n in $(seq 1 80); do
+    f="$LIB/Note $n.md"
+    { printf '# Note %s\n\n' "$n"; for k in 1 2 3 4 5 6; do printf 'Paragraph %s of note %s: the shorter the sentence, the more it has to carry, and a paragraph that says one thing says it twice as loud.\n\n- A list item with **bold** and *italic*\n- Another, with a [link](https://example.com)\n\n## Heading %s\n\n> A quotation, set apart.\n\n' "$k" "$n" "$k"; done; } > "$f"
+    touch -t "$(stamp $(( n % 7 )))" "$f"
+  done
+fi
 mkdir -p "$T"; : > "$T/log.txt"
 
 shoot() {
@@ -59,6 +68,11 @@ case "${1:-all}" in
   typing) DELAY=11 shoot views-typing -glassine.shootScript "1.0:type@40:The shorter the sentence, the more it has to carry. A paragraph that says one thing says it twice as loud, and the reader hears it the first time. Start at the end; the last line was the first one you meant." ;;
   # Six seconds of zooming out to the wall and back in, for a sample of the main thread under animation.
   motion) DELAY=11 shoot views-motion -glassine.shootScript "1.0:type@40:A few words first, so the page has something to zoom.;3.0:gallery;4.2:open:Untitled.md;5.4:gallery;6.6:open:Untitled.md;7.8:gallery;9.0:open:Untitled.md" ;;
+  # The sidebar's tree with Documents and the Shelf open, for the rows' positions; then a row carried two rows down, at the root and in the Shelf.
+  tree) EXTRA_JSON='"expandedFolders":["*documents","Shelf"],"sortDocumentsBy":"name",' DELAY=3 shoot views-tree ;;
+  dragroot) EXTRA_JSON='"expandedFolders":["*documents","Shelf"],"sortDocumentsBy":"name",' DELAY=5 shoot views-dragroot -glassine.shootScript "1.0:drag:${DRAG:-120,520,120,580}"; grep -E "drag begin|drag end" "$T/log.txt" | tail -2 ;;
+  # All Documents coming up over a big library: BIG=1 ./tests/shot-views.sh gallery & sleep 3.5; sample Glassine 4
+  gallery) DELAY=9 shoot views-gallery -glassine.shootScript "3.0:gallery;6.0:open:Untitled.md;7.5:gallery" ;;
   # A page switched away from with unsaved text: the save and the first-line rename land off the main thread.
   switch) DELAY=6 shoot views-switch -glassine.shootScript "0.8:select:2,15;1.0:type@0:Renamed by its first line;1.8:open:Garden.md;3.4:gallery"; ls "$LIB" ;;
   all) "$0" timelapse; "$0" everything; "$0" day; "$0" carousel; "$0" look; "$0" tour 2; "$0" tour 10 ;;

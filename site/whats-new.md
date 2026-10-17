@@ -8,7 +8,8 @@ every release. Newest version first. Three to five lines a version, each
 
 ## 0.2.28 — October 16, 2026
 
-- **Lighter under motion.** The window no longer works out, on every frame of every animation, where it could be dragged by; a drag on the glass simply moves it. Less of the main thread spent on bookkeeping while the page zooms or the days walk.
+- **All Documents comes up at once.** On a library of ninety documents the wall took a second and a half to appear; it takes a tenth of one now. Each card used to set every line of its preview as a view of its own, under a shadow that drew the whole card again.
+- **Lighter under motion.** The window no longer works out, on every frame of every animation, where it could be dragged by. It is dragged by its top edge now, the way a window is; the glass itself is no longer a handle.
 
 ## 0.2.27 — October 16, 2026
 
