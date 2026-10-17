@@ -139,7 +139,8 @@ struct WindowConfigurator: NSViewRepresentable {
                 // of the main thread in a sample). SwiftUI's WindowDragGesture
                 // in its place took the drags the sidebar's rows needed to be
                 // carried into order, from wherever it was put, so neither.
-                window.isMovableByWindowBackground = false
+                // (`-glassine.dragByBackground 1` turns the old way back on, for a check.)
+                window.isMovableByWindowBackground = UserDefaults.standard.bool(forKey: "glassine.dragByBackground")
                 window.titlebarSeparatorStyle = .none
                 window.toolbarStyle = .unifiedCompact
                 // Naming the frame restores the saved one at once, but SwiftUI then sizes

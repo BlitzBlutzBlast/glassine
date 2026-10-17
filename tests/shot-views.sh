@@ -69,7 +69,7 @@ case "${1:-all}" in
   # Six seconds of zooming out to the wall and back in, for a sample of the main thread under animation.
   motion) DELAY=11 shoot views-motion -glassine.shootScript "1.0:type@40:A few words first, so the page has something to zoom.;3.0:gallery;4.2:open:Untitled.md;5.4:gallery;6.6:open:Untitled.md;7.8:gallery;9.0:open:Untitled.md" ;;
   # The sidebar's tree with Documents and the Shelf open, for the rows' positions; then a row carried two rows down, at the root and in the Shelf.
-  tree) EXTRA_JSON='"expandedFolders":["*documents","Shelf"],"sortDocumentsBy":"name",' DELAY=3 shoot views-tree ;;
+  tree) EXTRA_JSON='"expandedFolders":["*documents","Shelf"],"sortDocumentsBy":"name",' DELAY=${DELAY:-3} shoot views-tree "${@:2}" ;;
   dragroot) EXTRA_JSON='"expandedFolders":["*documents","Shelf"],"sortDocumentsBy":"name",' DELAY=5 shoot views-dragroot -glassine.shootScript "1.0:drag:${DRAG:-120,520,120,580}"; grep -E "drag begin|drag end" "$T/log.txt" | tail -2 ;;
   # All Documents coming up over a big library: BIG=1 ./tests/shot-views.sh gallery & sleep 3.5; sample Glassine 4
   gallery) DELAY=9 shoot views-gallery -glassine.shootScript "3.0:gallery;6.0:open:Untitled.md;7.5:gallery" ;;
