@@ -78,7 +78,6 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.16), value: state.showingCommandBar)
         .animation(.easeOut(duration: 0.18), value: state.carousel == nil)
         .coordinateSpace(name: "glassineRoot")
-        .modifier(DragsWindowByGlass())
         .frame(minWidth: 620, minHeight: 400)
         .background(WindowConfigurator(theme: theme, floats: state.settings.data.floatOnTop))
         .preferredColorScheme(theme.colorScheme)

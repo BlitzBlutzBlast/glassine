@@ -91,16 +91,21 @@ struct GlassBackdrop: View {
             GrainOverlay(opacity: backdrop.isDesktop ? theme.grain : grain)
         }
         .ignoresSafeArea()
+        .modifier(DragsWindowByGlass())
     }
 }
 
-/// The window, dragged by its glass. On macOS 15 and later a drag that no
-/// control, row, card or page claimed moves the window, through SwiftUI's
-/// own window-drag gesture at the root of the content; on macOS 14 AppKit
-/// does it the old way (`isMovableByWindowBackground`), which has the window
-/// work out in advance, and again on every change of layout, which parts of
-/// its content are *not* draggable — a walk of the whole SwiftUI tree, on
-/// every frame of every animation (a tenth of the main thread in a sample).
+/// The window, dragged by its glass. On macOS 15 and later the glass itself
+/// — this backdrop, and the sidebar's own ground — carries SwiftUI's
+/// window-drag gesture: a drag that lands on it, which is to say on no
+/// control, row, card or page, moves the window. The gesture lives on those
+/// layers and not at the root of the content, because at the root it took
+/// every drag before the rows underneath could claim theirs (the sidebar's
+/// rows could no longer be carried into order). On macOS 14 AppKit does it
+/// the old way (`isMovableByWindowBackground`), which has the window work
+/// out in advance, and again on every change of layout, which parts of its
+/// content are *not* draggable — a walk of the whole SwiftUI tree, on every
+/// frame of every animation (a tenth of the main thread in a sample).
 /// Asking at the drag costs nothing.
 struct DragsWindowByGlass: ViewModifier {
     static var usesGesture: Bool {
