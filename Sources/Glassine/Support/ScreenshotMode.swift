@@ -263,20 +263,35 @@ enum ScreenshotMode {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { post(.leftMouseUp, at: p, in: window) }
             }
         case "drag":
-            // A press at one point in the window carried to another over half a
-            // second, in points from the top left: "drag:x1,y1,x2,y2".
+            // A press at one point in the window carried to another, in points
+            // from the top left: "drag:x1,y1,x2,y2" over half a second, or
+            // "drag:x1,y1,x2,y2,s" over s seconds, eased in and out the way a
+            // hand moves, let go exactly s seconds after the press (a film
+            // lands the drop on a beat).
             let parts = arg.split(separator: ",").compactMap { Double($0) }
-            if parts.count == 4, let window = mainWindow() {
+            if parts.count >= 4, let window = mainWindow() {
                 let h = window.frame.height
                 let from = NSPoint(x: parts[0], y: h - parts[1]), to = NSPoint(x: parts[2], y: h - parts[3])
+                let slow = parts.count >= 5
+                let span = slow ? max(0.1, parts[4]) : 0.48
+                let steps = slow ? max(12, Int(span * 60)) : 12
+                let travel = slow ? span - 0.12 : span
                 window.makeKey(); post(.leftMouseDown, at: from, in: window)
-                let steps = 12
+                let start = DispatchTime.now()
                 for i in 1...steps {
                     let f = Double(i) / Double(steps)
-                    let p = NSPoint(x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.04 * Double(i)) { post(.leftMouseDragged, at: p, in: window) }
+                    var e = slow ? (f < 0.5 ? 4 * f * f * f : 1 - pow(-2 * f + 2, 3) / 2) : f
+                    // A slow carry lifts at once: the first move clears the
+                    // few points a press may wobble before it is a drag.
+                    let length = hypot(to.x - from.x, to.y - from.y)
+                    if slow, length > 0 { e = max(e, min(1, 6 / length)) }
+                    let p = NSPoint(x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e)
+                    DispatchQueue.main.asyncAfter(deadline: start + travel * f) { post(.leftMouseDragged, at: p, in: window) }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.04 * Double(steps) + 0.1) { post(.leftMouseUp, at: to, in: window) }
+                DispatchQueue.main.asyncAfter(deadline: start + (slow ? span : travel + 0.1)) {
+                    timeLog.append(String(format: "a %.4f %.4f %@ %@", now(), 0.0, "drop", arg))
+                    post(.leftMouseUp, at: to, in: window)
+                }
             }
         case "key":
             guard let editor = GlassineTextView.current else { return }
@@ -307,6 +322,20 @@ enum ScreenshotMode {
             let parts = arg.split(separator: ",")
             let dir: GalleryNavigator.Direction = switch parts.first.map(String.init) { case "up": .up; case "left": .left; case "right": .right; default: .down }
             for _ in 0..<(parts.dropFirst().first.flatMap { Int($0) } ?? 1) { GalleryNavigator.current?.move(dir) }
+        case "wallframes":
+            // Where every card of the wall is, in window points from the top
+            // left, for a film that moves the cards itself: "wallframes" in log.txt.
+            if let nav = GalleryNavigator.current, let plan = nav.plan, let window = mainWindow(), let view = window.contentView {
+                let origin = nav.wallOrigin
+                var sv: NSView? = nav.scrollView
+                var base = CGPoint.zero
+                if let scroll = sv { let r = scroll.convert(scroll.bounds, to: view); base = CGPoint(x: r.minX, y: view.isFlipped ? r.minY : view.bounds.height - r.maxY) }
+                sv = nil
+                for doc in plan.items {
+                    guard let f = plan.frames[doc.id] else { continue }
+                    note(String(format: "wallframe %@|%@|%.1f|%.1f|%.1f|%.1f", doc.id, doc.title, base.x + origin.x + f.minX, base.y + origin.y + f.minY, f.width, f.height))
+                }
+            }
         case "order":
             // The wall's order as it stands, and the sort that makes it, for a check.
             note("order (\(app.settings.data.sortDocumentsBy.rawValue)): " + app.sorted(app.activeDocuments).map(\.title).joined(separator: " | "))

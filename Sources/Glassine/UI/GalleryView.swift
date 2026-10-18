@@ -178,6 +178,10 @@ struct GalleryView: View {
         drag.plan = plan
         drag.planner = { docs in WallPlan(items: docs, columns: plan.columns.count, width: plan.width, spacing: plan.spacing) }
         drag.noteHeights(of: plan)
+        // The keys and the reveal work from the plan as laid out — with the
+        // heights the cards reported, not the first guesses. (The signature
+        // the navigator is told about on change covers the order alone.)
+        nav.plan = plan
         return ZStack(alignment: .topLeading) {
             ForEach(plan.visible(in: band, keeping: keep), id: \.id) { doc in
                 let frame = plan.frames[doc.id] ?? .zero
