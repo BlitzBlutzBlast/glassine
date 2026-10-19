@@ -36,7 +36,7 @@ enum MarkdownHTML {
     private static let listRx = rx("^([ \\t]*)([-*+]|\\d{1,9}[.)])([ \\t]+)(.*)$")
     private static let taskRx = rx("^\\[([ xX])\\][ \\t]+(.*)$")
     private static let fenceRx = rx("^(`{3,}|~{3,})[ \\t]*([\\w+#.-]*)")
-    private static let tableSepRx = rx("^\\|?[ \\t]*:?-+:?[ \\t]*(\\|[ \\t]*:?-+:?[ \\t]*)*\\|?$")
+    private static let tableSepRx = rx("^\\|?[ \\t]*:?[-\u{2013}\u{2014}]+:?[ \\t]*(\\|[ \\t]*:?[-\u{2013}\u{2014}]+:?[ \\t]*)*\\|?$")
     private static let codeSpanRx = rx("(`+)([^`\\n]+?)\\1")
     private static let escapeRx = rx("\\\\([\\\\`*_{}\\[\\]()#+\\-.!|>~])")
     private static let imageRx = rx("!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:[ \\t]+\"[^\"]*\")?\\)")
@@ -396,7 +396,7 @@ enum MarkdownHTML {
 
     private static func isTableSeparator(_ line: String) -> Bool {
         let t = line.trimmingCharacters(in: .whitespaces)
-        guard t.contains("-"), t.contains("|") || t.hasPrefix(":") else { return false }
+        guard t.contains(where: { $0 == "-" || $0 == "\u{2013}" || $0 == "\u{2014}" }), t.contains("|") || t.hasPrefix(":") else { return false }
         return first(tableSepRx, t) != nil
     }
 

@@ -194,8 +194,9 @@ final class GlassineLayoutManager: NSLayoutManager {
             color.setFill()
             NSRect(x: x, y: y, width: width, height: 1).fill()
         }
-        // A table: a hairline the height of the row where each pipe is, and a
-        // rule across each cell of the separator row.
+        // A table: a hairline the height of the row where each pipe is — the
+        // whole row, every line of it, when a cell wrapped — and a rule
+        // across each cell of the separator row.
         storage.enumerateAttribute(MarkdownTable.pipeKey, in: chars, options: []) { value, range, _ in
             guard let color = value as? NSColor else { return }
             for i in range.location..<range.upperBoundValue {
@@ -203,13 +204,38 @@ final class GlassineLayoutManager: NSLayoutManager {
                 guard g < self.numberOfGlyphs else { continue }
                 let line = self.lineFragmentRect(forGlyphAt: g, effectiveRange: nil)
                 let loc = self.location(forGlyphAt: g)
-                let advance = self.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: self.textContainer(forGlyphAt: g, effectiveRange: nil)!).width
-                // The pipe's own glyph width, before any padding kerned onto it.
-                let font = storage.attribute(.font, at: i, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 16)
-                let bar = min(advance, ("|" as NSString).size(withAttributes: [.font: font]).width)
-                let x = (origin.x + line.minX + loc.x + bar / 2).rounded() - 0.5
+                // The row's lines, top to bottom: the words' own rects, plus
+                // the row's air above and below them — not the page's spacing
+                // after the last row, which the line's rect also holds.
+                var rowRange = NSRange(location: i, length: 1)
+                _ = storage.attribute(MarkdownTable.rowKey, at: i, longestEffectiveRange: &rowRange, in: NSRange(location: 0, length: storage.length))
+                let air = (storage.attribute(.paragraphStyle, at: i, effectiveRange: nil) as? NSParagraphStyle)?.paragraphSpacingBefore ?? 0
+                var top = line.minY, bottom = line.maxY
+                var first = line
+                var any = false
+                self.enumerateLineFragments(forGlyphRange: self.glyphRange(forCharacterRange: rowRange, actualCharacterRange: nil)) { rect, used, _, _, _ in
+                    if rect.minY < first.minY { first = rect }
+                    if !any { top = used.minY; bottom = used.maxY; any = true }
+                    top = min(top, used.minY); bottom = max(bottom, used.maxY)
+                }
+                top -= air; bottom += air
+                let x: CGFloat
+                if line.minY > first.minY + 0.5, let edge = storage.attribute(MarkdownTable.edgeKey, at: i, effectiveRange: nil) as? CGFloat {
+                    // The closing pipe of a row whose last cell wrapped sits at
+                    // the end of the cell's last line; the hairline goes at the
+                    // table's edge, where the other rows' closing pipes are.
+                    x = first.minX + edge
+                } else if let inset = storage.attribute(MarkdownTable.pipeInsetKey, at: i, effectiveRange: nil) as? CGFloat {
+                    x = line.minX + loc.x + inset
+                } else {
+                    let advance = self.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: self.textContainer(forGlyphAt: g, effectiveRange: nil)!).width
+                    // The pipe's own glyph width, before any padding kerned onto it.
+                    let font = storage.attribute(.font, at: i, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 16)
+                    let bar = min(advance, ("|" as NSString).size(withAttributes: [.font: font]).width)
+                    x = line.minX + loc.x + bar / 2
+                }
                 color.setFill()
-                NSRect(x: x, y: origin.y + line.minY, width: 1, height: line.height).fill()
+                NSRect(x: (origin.x + x).rounded() - 0.5, y: origin.y + top, width: 1, height: bottom - top).fill()
             }
         }
         storage.enumerateAttribute(MarkdownTable.ruleKey, in: chars, options: []) { value, range, _ in

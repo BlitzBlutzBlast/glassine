@@ -6,8 +6,11 @@ every release. Newest version first. Three to five lines a version, each
 `- **Title.** One or two plain sentences.` — links as `[text](url)`, keys as
 `[[⌘K]]`. Older blocks stay as a record; only the top one is shown.
 
-## 0.2.29 — October 17, 2026
+## 0.2.29 — October 19, 2026
 
+- **Tables that fit the page.** A long cell wraps under its own column now, hairlines the full height of the row, and the table is never wider than the page. `/table 3x4` starts one at any size. [Tables.](https://docs.glassine.ink/editor/tables)
+- **Smart dashes keep off the separator.** Type `| --- | --- |` and the hyphens stay hyphens; a separator that arrived as `| — | — |` reads as a table anyway, and a paste straightens it.
+- **A paste knows a table of tabs.** A spreadsheet selection becomes a pipe table; a paste of several lines lands on lines of its own; text dragged in from another app is read like a paste.
 - **A quieter icon.** The Dock icon is the app's own glass again, now in the look it comes with: Midnight over Soft Sky, the g in paper-white on it.
 
 ## 0.2.28 — October 17, 2026

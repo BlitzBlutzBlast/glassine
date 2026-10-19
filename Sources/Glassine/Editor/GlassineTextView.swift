@@ -365,6 +365,8 @@ final class GlassineTextView: NSTextView {
         textContainerInset = newInset
         if oldColumn != column {
             textContainer?.containerSize = NSSize(width: column, height: CGFloat.greatestFiniteMagnitude)
+            // A table is laid out to the width it has.
+            if let storage = textStorage { styler.restyleTables(storage) }
         }
         if let anchor { hold(anchor) }
         needsDisplay = true
@@ -558,18 +560,44 @@ final class GlassineTextView: NSTextView {
     /// treated as typing, and the smart-dash pass that follows typing turned a
     /// table's `| --- |` rule into em dashes a moment later — the table came
     /// apart. Written straight to the storage, as one undoable step, it stays
-    /// Markdown.
+    /// Markdown. More than one line is a block — paragraphs, a list, a table
+    /// — and a block lands on lines of its own: a paste into the middle of a
+    /// sentence does not weld its first row onto the words before the caret
+    /// or its last onto the words after.
     private func insertVerbatim(_ text: String) {
         guard let storage = textStorage else { return }
         let range = selectedRange()
-        guard shouldChangeText(in: range, replacementString: text) else { return }
-        storage.replaceCharacters(in: range, with: NSAttributedString(string: text, attributes: typingAttributes))
+        var block = text
+        var lead = 0
+        if text.contains("\n") {
+            let ns = storage.string as NSString
+            let before: unichar = range.location > 0 ? ns.character(at: range.location - 1) : 10
+            let after: unichar = range.upperBoundValue < ns.length ? ns.character(at: range.upperBoundValue) : 10
+            if before != 10, !text.hasPrefix("\n") { block = "\n" + block; lead = 1 }
+            if after != 10, !text.hasSuffix("\n") { block += "\n" }
+        }
+        guard shouldChangeText(in: range, replacementString: block) else { return }
+        storage.replaceCharacters(in: range, with: NSAttributedString(string: block, attributes: typingAttributes))
         didChangeText()
-        let end = NSRange(location: range.location + (text as NSString).length, length: 0)
+        let end = NSRange(location: range.location + lead + (text as NSString).length, length: 0)
         setSelectedRange(end)
         scrollRangeToVisible(end)
         undoManager?.setActionName("Paste")
     }
+
+    /// Text dropped on the page, or handed over by a service, goes through
+    /// the same reading as a paste: the rich flavour read for its shape,
+    /// the plain one tidied. Files and pictures take NSTextView's own road.
+    override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        if Self.textFlavours.contains(type), let text = PasteMarkdown.text(from: pboard) {
+            insertVerbatim(text)
+            return true
+        }
+        return super.readSelection(from: pboard, type: type)
+    }
+
+    private static let textFlavours: Set<NSPasteboard.PasteboardType> = [.string, .rtf, .rtfd, .html,
+                                                                          NSPasteboard.PasteboardType("public.utf8-plain-text")]
 
     /// Edit → Paste as Plain Text (⌥⇧⌘V): the clipboard's plain string,
     /// nothing read into it, for the time the conversion is not what was wanted.
@@ -594,6 +622,18 @@ final class GlassineTextView: NSTextView {
         let pb = NSPasteboard.general
         pb.addTypes([PasteMarkdown.ownType], owner: nil)
         pb.setString("1", forType: PasteMarkdown.ownType)
+    }
+
+    /// The same mark on a drag's pasteboard, so words dragged across the page
+    /// — Markdown already, styled as the page styles them — are not read for
+    /// their style and written out a second time.
+    override func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        let ok = super.writeSelection(to: pboard, types: types)
+        if ok {
+            pboard.addTypes([PasteMarkdown.ownType], owner: nil)
+            pboard.setString("1", forType: PasteMarkdown.ownType)
+        }
+        return ok
     }
 
     /// A URL pasted over selected words links them instead of replacing them:
@@ -649,6 +689,7 @@ final class GlassineTextView: NSTextView {
     override func insertNewline(_ sender: Any?) {
         if slashAnchor != nil { pickSlashItem(slashSelection); return }
         expandDateShortcutIfNeeded()
+        straightenSeparatorLine()
         if config.continueLists, continueListIfNeeded() { return }
         super.insertNewline(sender)
     }
@@ -666,14 +707,19 @@ final class GlassineTextView: NSTextView {
         // Three hyphens are a rule, not an em dash and a hyphen: while a line
         // holds nothing but dashes the smart-dash substitution stands down, and
         // an em dash it has already made turns back into the hyphens it came from.
-        let dashLine = (string as? String) == "-" && lineBeforeCaretIsDashes()
+        // A table's separator row is dashes between pipes, and there the
+        // substitution stands down for every keystroke — the space and the
+        // pipe after the dashes are what used to turn them into em dashes.
+        let typedDash = (string as? String) == "-"
+        let dashLine = (typedDash && lineBeforeCaretIsDashes()) || lineBeforeCaretIsSeparator()
         let smartDashes = isAutomaticDashSubstitutionEnabled
         if dashLine { isAutomaticDashSubstitutionEnabled = false }
         super.insertText(string, replacementRange: replacementRange)
         if dashLine {
             isAutomaticDashSubstitutionEnabled = smartDashes
             straightenDashLine()
-            dropBelowRuleIfComplete()
+            straightenSeparatorLine()
+            if typedDash { dropBelowRuleIfComplete() }
         }
         // A slash on its own — at the start of a line or after a space — opens
         // the menu; one inside a word or an address is just a slash.
@@ -691,12 +737,44 @@ final class GlassineTextView: NSTextView {
 
     /// The line so far, up to the caret, is dashes and nothing else.
     private func lineBeforeCaretIsDashes() -> Bool {
-        guard let storage = textStorage else { return false }
+        let head = lineBeforeCaret()
+        return !head.isEmpty && head.allSatisfy { Self.dashes.contains($0) }
+    }
+
+    /// The line so far is a table's separator row in the making: pipes,
+    /// dashes, colons and spaces, with at least one pipe among them.
+    private func lineBeforeCaretIsSeparator() -> Bool {
+        let head = lineBeforeCaret()
+        return head.contains("|") && head.allSatisfy { Self.dashes.contains($0) || Self.separatorFill.contains($0) }
+    }
+
+    private static let separatorFill: Set<Character> = ["|", ":", " ", "\t"]
+
+    private func lineBeforeCaret() -> String {
+        guard let storage = textStorage else { return "" }
         let ns = storage.string as NSString
         let sel = selectedRange()
         let para = ns.paragraphRange(for: NSRange(location: sel.location, length: 0))
-        let head = ns.substring(with: NSRange(location: para.location, length: sel.location - para.location))
-        return !head.isEmpty && head.allSatisfy { Self.dashes.contains($0) }
+        return ns.substring(with: NSRange(location: para.location, length: sel.location - para.location))
+    }
+
+    /// A separator row with an em or en dash in it gets its hyphens back,
+    /// so the table reads as one here and everywhere else the file goes.
+    private func straightenSeparatorLine() {
+        guard let storage = textStorage else { return }
+        let ns = storage.string as NSString
+        let sel = selectedRange()
+        var para = ns.paragraphRange(for: NSRange(location: sel.location, length: 0))
+        if para.length > 0, ns.character(at: para.upperBoundValue - 1) == 10 { para.length -= 1 }
+        let line = ns.substring(with: para)
+        guard line.contains("|"), line.contains(where: { $0 == "\u{2013}" || $0 == "\u{2014}" }),
+              line.allSatisfy({ Self.dashes.contains($0) || Self.separatorFill.contains($0) }) else { return }
+        let straight = line.replacingOccurrences(of: "\u{2014}", with: "---").replacingOccurrences(of: "\u{2013}", with: "--")
+        let caretFromEnd = para.upperBoundValue - sel.location
+        guard shouldChangeText(in: para, replacementString: straight) else { return }
+        storage.replaceCharacters(in: para, with: straight)
+        didChangeText()
+        setSelectedRange(NSRange(location: max(para.location, para.location + straight.nsLength - caretFromEnd), length: 0))
     }
 
     /// A line of dashes with an em or en dash in it becomes the plain hyphens
@@ -1324,6 +1402,7 @@ final class GlassineTextView: NSTextView {
         guard let anchor = slashAnchor, index >= 0, index < slashItems.count, let storage = textStorage else { return }
         let item = slashItems[index]
         let sel = selectedRange()
+        let query = sel.location > anchor + 1 ? (storage.string as NSString).substring(with: NSRange(location: anchor + 1, length: sel.location - anchor - 1)) : ""
         closeSlashMenu()
         undoManager?.beginUndoGrouping()
         defer { undoManager?.endUndoGrouping() }
@@ -1338,7 +1417,14 @@ final class GlassineTextView: NSTextView {
         case .codeBlock: insertOwnLine("```\n\n```", caretOffset: 4)
         case .divider: insertOwnLine("---", caretOffset: 4)
         case .table:
-            insertOwnLine("| Column | Column |\n| --- | --- |\n|  |  |", caretOffset: 2)
+            // "/table" is two columns and a row under the header; "/table 3x4"
+            // is three columns and four rows, the header among them.
+            let size = SlashItem.tableSize(SlashItem.argument(of: query)) ?? (columns: 2, rows: 2)
+            let header = "|" + Array(repeating: " Column |", count: size.columns).joined()
+            let rule = "|" + Array(repeating: " --- |", count: size.columns).joined()
+            let empty = "|" + Array(repeating: "  |", count: size.columns).joined()
+            let lines = [header, rule] + Array(repeating: empty, count: size.rows - 1)
+            insertOwnLine(lines.joined(separator: "\n"), caretOffset: 2)
             setSelectedRange(NSRange(location: selectedRange().location, length: 6))   // the first heading, ready to be typed over
         case .link: markdownLink(nil)
         case .chip: markdownChip(nil)

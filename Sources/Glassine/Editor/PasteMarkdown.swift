@@ -43,18 +43,27 @@ enum PasteMarkdown {
             if !md.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return md }
         }
         guard let plain else { return nil }
-        return tidyPlain(plain)
+        return text(fromPlain: plain)
+    }
+
+    /// The text a paste of a plain string inserts: a table when the string is
+    /// one, tidied otherwise.
+    static func text(fromPlain plain: String) -> String {
+        tableFromTabs(plain) ?? tidyPlain(plain)
     }
 
     // MARK: - Plain text
 
     /// Plain text with the bullets and numbers some apps leave in it turned
     /// into list markers the editor knows: `•` and its relatives become `-`,
-    /// `1)` becomes `1.`, a leading tab becomes the editor's four spaces.
+    /// `1)` becomes `1.`, a leading tab becomes the editor's four spaces. A
+    /// table's separator row that passed through someone's smart dashes on
+    /// the way (`| — | — |`) gets its hyphens back.
     static func tidyPlain(_ s: String) -> String {
         let lines = s.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")
         return lines.map { line -> String in
+            if let straight = straightenedSeparator(line) { return straight }
             var l = Substring(line)
             var indent = ""
             while let c = l.first, c == " " || c == "\t" {
@@ -74,6 +83,38 @@ enum PasteMarkdown {
 
     private static let bulletGlyphs: Set<Character> = ["•", "◦", "▪", "●", "○", "■", "‣", "⁃"]
     private static let numberedRx = try! NSRegularExpression(pattern: "^(\\d{1,3})[.)][ \\t]+(.*)$")
+
+    /// A line that is a table separator written with em or en dashes, with
+    /// hyphens in their place; nil for any other line.
+    static func straightenedSeparator(_ line: String) -> String? {
+        guard line.contains("|"), line.contains(where: { $0 == "\u{2013}" || $0 == "\u{2014}" }),
+              line.allSatisfy({ separatorChars.contains($0) }) else { return nil }
+        return line.replacingOccurrences(of: "\u{2014}", with: "---").replacingOccurrences(of: "\u{2013}", with: "--")
+    }
+
+    private static let separatorChars: Set<Character> = ["-", "\u{2013}", "\u{2014}", "|", ":", " ", "\t"]
+
+    /// Cells separated by tabs — what a spreadsheet, or a table on a web page
+    /// with no rich flavour behind it, leaves as plain text — as a pipe table.
+    /// Only when every line has the same number of tabs and the first column
+    /// holds something, so indented code is left alone.
+    static func tableFromTabs(_ s: String) -> String? {
+        var lines = s.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        guard lines.count >= 2, !lines.contains(where: { $0.isEmpty }) else { return nil }
+        let rows = lines.map { $0.components(separatedBy: "\t") }
+        let columns = rows[0].count
+        guard columns >= 2, rows.allSatisfy({ $0.count == columns }),
+              rows.contains(where: { !$0[0].trimmingCharacters(in: .whitespaces).isEmpty }) else { return nil }
+        func cell(_ c: String) -> String {
+            c.replacingOccurrences(of: "|", with: "\\|").trimmingCharacters(in: .whitespaces)
+        }
+        var out = ["| " + rows[0].map(cell).joined(separator: " | ") + " |",
+                   "| " + Array(repeating: "---", count: columns).joined(separator: " | ") + " |"]
+        for r in rows.dropFirst() { out.append("| " + r.map(cell).joined(separator: " | ") + " |") }
+        return out.joined(separator: "\n")
+    }
 
     // MARK: - Rich text
 
@@ -179,7 +220,7 @@ enum PasteMarkdown {
         var blanks = 0
         for line in out {
             if line.isEmpty { blanks += 1; if blanks > 2 { continue } } else { blanks = 0 }
-            collapsed.append(line)
+            collapsed.append(straightenedSeparator(line) ?? line)
         }
         return collapsed.joined(separator: "\n")
     }

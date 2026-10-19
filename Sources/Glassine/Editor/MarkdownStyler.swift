@@ -58,12 +58,19 @@ final class MarkdownStyler {
         let indent = (config.fontSize * 1.1).rounded()
         quoteParagraph = config.indentedParagraphStyle(firstLineIndent: indent, headIndent: indent, tight: false)
         codeParagraph = config.indentedParagraphStyle(firstLineIndent: 0, headIndent: 0, tight: true)
+        // A row has a little air above and below its words, as a table's
+        // cells do; the hairlines run through it, since the spacing belongs
+        // to the row's lines.
+        let air = (config.fontSize * 0.2).rounded()
         let row = config.baseParagraphStyle()
         row.firstLineHeadIndent = 0
-        row.paragraphSpacing = 0
+        row.paragraphSpacingBefore = air
+        row.paragraphSpacing = air
         tableRowParagraph = row
         let lastRow = config.baseParagraphStyle()
         lastRow.firstLineHeadIndent = 0
+        lastRow.paragraphSpacingBefore = air
+        lastRow.paragraphSpacing += air
         tableLastRowParagraph = lastRow
         listStyleCache = [:]
         lastFenceCount = -1
@@ -167,10 +174,33 @@ final class MarkdownStyler {
 
     private func layOutTable(_ table: MarkdownTable.Table, _ storage: NSTextStorage) {
         let theme = config.theme
+        // The width the table has is the text container's, when the view has
+        // sized it; the column setting stands in until then.
+        var available = config.columnWidth
+        if let container = storage.layoutManagers.first?.textContainers.first,
+           container.size.width > 20, container.size.width < 50_000 {
+            available = container.size.width - 2 * container.lineFragmentPadding
+        }
         MarkdownTable.layOut(table, in: storage, config: config,
                              pipeColor: theme.text.withAlpha(theme.isDark ? 0.22 : 0.18),
                              ruleColor: theme.text.withAlpha(theme.isDark ? 0.3 : 0.24),
-                             headerFont: boldFont, rowParagraph: tableRowParagraph, lastRowParagraph: tableLastRowParagraph)
+                             headerFont: boldFont, rowParagraph: tableRowParagraph, lastRowParagraph: tableLastRowParagraph,
+                             availableWidth: available)
+    }
+
+    /// Restyles every table in the text — for a column that changed width,
+    /// since a table is laid out to the width it has.
+    func restyleTables(_ storage: NSTextStorage) {
+        let ns = storage.string as NSString
+        guard ns.range(of: "|").location != NSNotFound else { return }
+        var at = 0
+        while at < ns.length {
+            let block = MarkdownTable.blockRange(ns, around: at)
+            if block.length > 0, MarkdownTable.looksLikeRow(ns.substring(with: ns.paragraphRange(for: NSRange(location: at, length: 0)))) {
+                restyle(storage, range: block)
+            }
+            at = max(block.upperBoundValue, at + 1)
+        }
     }
 
     // MARK: - Fences

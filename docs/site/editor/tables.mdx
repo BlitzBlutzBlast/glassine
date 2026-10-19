@@ -15,7 +15,11 @@ A table is written the way Markdown writes one, and the file keeps every pipe an
 
 The editor shows it as a table. Each column is as wide as its widest cell, whatever the font — the narrower cells are padded to fit, so the columns line up in Helvetica as they would in a monospace face. The pipes are drawn as hairlines the height of the row, the separator's dashes as a rule under the header, and the header row in the bold weight. Nothing is added to the file; move the caret through a row and every character is still there.
 
+A table is never wider than the page. The last column takes what room is left after the others, and a cell longer than that wraps under its own column — a key on the left, a paragraph on the right, the way a sheet of practicalities reads — with the row's hairlines running the full height of the wrapped cell. Narrow the window and the table narrows with it.
+
 A column's alignment comes from the separator, as it does everywhere: `---` or `:---` for left, `---:` for right (numbers, usually), `:---:` for centre. Bold, italics, links, chips and dates work inside a cell as they do anywhere, and a cell can be empty.
+
+The separator is the one place smart dashes could get in the way, and they stand down there: type `| --- | --- |` with them on and the hyphens stay hyphens, where before they became an em dash and the table came apart. A separator that was already turned to `| — | — |` somewhere else — in a message, say, before it was pasted — still reads as a table here, and a paste straightens it.
 
 ## Moving about
 
@@ -23,7 +27,7 @@ A column's alignment comes from the separator, as it does everywhere: `---` or `
 
 ## Starting one
 
-`/table` in the [slash menu](/editor/formatting#the-slash-menu) writes a two-column table with a header, the first heading selected and ready to be typed over. A table [pasted](/editor/markdown#pasting-from-elsewhere) from a web page, a spreadsheet or a document arrives as a pipe table already.
+`/table` in the [slash menu](/editor/formatting#the-slash-menu) writes a two-column table with a header, the first heading selected and ready to be typed over; `/table 3x4` writes three columns and four rows, the header among them (`/table 3` is three columns). A table [pasted](/editor/markdown#pasting-from-elsewhere) from a web page, a spreadsheet or a document arrives as a pipe table already, and so do cells separated by tabs — a selection copied out of a spreadsheet, or a table a page handed over as plain text.
 
 ## In Review and on paper
 

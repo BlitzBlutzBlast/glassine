@@ -269,9 +269,9 @@ struct SlashItem: Identifiable {
         SlashItem("number", "Numbered list", hint: "1.", symbol: "list.number", keywords: ["ol", "ordered"], .block(.numbered)),
         SlashItem("task", "Task", hint: "- [ ]", symbol: "checklist", keywords: ["todo", "check", "checkbox"], .block(.task)),
         SlashItem("quote", "Quote", hint: ">", symbol: "text.quote", keywords: ["blockquote"], .block(.quote)),
+        SlashItem("table", "Table", hint: "| 3x4", symbol: "tablecells", keywords: ["grid", "columns", "rows", "cells"], .table),
         SlashItem("code", "Code block", hint: "```", symbol: "chevron.left.forwardslash.chevron.right", keywords: ["fence", "pre"], .codeBlock),
         SlashItem("divider", "Divider", hint: "---", symbol: "minus", keywords: ["rule", "hr", "line", "separator"], .divider),
-        SlashItem("table", "Table", hint: "|", symbol: "tablecells", keywords: ["grid", "columns", "rows", "cells"], .table),
         SlashItem("link", "Link", hint: "[ ]( )", symbol: "link", keywords: ["url"], .link),
         SlashItem("chip", "Chip", hint: "==", symbol: "highlighter", keywords: ["highlight", "mark", "capsule", "tag"], .chip),
         SlashItem("today", "Today", hint: "@", symbol: "calendar", keywords: ["date", "now"], .date(0)),
@@ -280,16 +280,43 @@ struct SlashItem: Identifiable {
     ]
 
     /// Everything, for an empty query; otherwise titles that start with it
-    /// first, then titles and keywords that contain it.
+    /// first, then titles and keywords that contain it. A query that is a
+    /// word and then more ("table 3x4") matches by its first word, the rest
+    /// being the item's argument.
     static func matching(_ query: String) -> [SlashItem] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return all }
-        let starts = all.filter { $0.title.lowercased().hasPrefix(q) }
-        let rest = all.filter { item in
-            !starts.contains(where: { $0.id == item.id })
-                && (item.title.lowercased().contains(q) || item.keywords.contains(where: { $0.hasPrefix(q) }))
+        func find(_ q: String) -> [SlashItem] {
+            let starts = all.filter { $0.title.lowercased().hasPrefix(q) }
+            let rest = all.filter { item in
+                !starts.contains(where: { $0.id == item.id })
+                    && (item.title.lowercased().contains(q) || item.keywords.contains(where: { $0.hasPrefix(q) }))
+            }
+            return starts + rest
         }
-        return starts + rest
+        let whole = find(q)
+        if !whole.isEmpty { return whole }
+        guard let head = q.split(separator: " ").first.map(String.init), head != q else { return [] }
+        return find(head)
+    }
+
+    /// What follows the first word of a query: "3x4" in "table 3x4".
+    static func argument(of query: String) -> String {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard let space = q.firstIndex(of: " ") else { return "" }
+        return q[q.index(after: space)...].trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The columns and rows asked for after "table": "3x4", "3×4", "3 by 4",
+    /// or just "3" for the columns; nil for anything else.
+    static func tableSize(_ argument: String) -> (columns: Int, rows: Int)? {
+        let a = argument.lowercased().replacingOccurrences(of: "×", with: "x").replacingOccurrences(of: " by ", with: "x")
+            .replacingOccurrences(of: " ", with: "")
+        guard !a.isEmpty else { return nil }
+        let parts = a.split(separator: "x").map(String.init)
+        guard let c = Int(parts[0]), c >= 1 else { return nil }
+        let r = parts.count > 1 ? Int(parts[1]) ?? 2 : 2
+        return (min(c, 12), max(2, min(r, 40)))
     }
 }
 
@@ -303,7 +330,7 @@ struct SlashMenu: View {
 
     static let rowHeight: CGFloat = 28
     static let width: CGFloat = 250
-    static func height(for count: Int) -> CGFloat { CGFloat(min(count, 8)) * (rowHeight + 1) + 11 }
+    static func height(for count: Int) -> CGFloat { CGFloat(min(count, 9)) * (rowHeight + 1) + 11 }
 
     var body: some View {
         ScrollViewReader { proxy in

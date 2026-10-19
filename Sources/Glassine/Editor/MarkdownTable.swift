@@ -18,6 +18,14 @@ enum MarkdownTable {
     static let ruleKey = NSAttributedString.Key("glassine.tableRule")
     /// On every character of a table row: which row of its table it is.
     static let rowKey = NSAttributedString.Key("glassine.tableRow")
+    /// On every character of a table row: the table's right edge, in points
+    /// from the row's left, where the closing pipe of a row whose last cell
+    /// wrapped is drawn — the pipe itself ends up at the end of the last line.
+    static let edgeKey = NSAttributedString.Key("glassine.tableEdge")
+    /// On the separator row's pipes, set small with the rest of the row:
+    /// half the width of a body pipe, so the hairline sits where the other
+    /// rows' do.
+    static let pipeInsetKey = NSAttributedString.Key("glassine.tablePipeInset")
 
     enum Alignment { case left, center, right }
 
@@ -38,10 +46,13 @@ enum MarkdownTable {
 
     // MARK: - Reading
 
-    private static let separatorRx = try! NSRegularExpression(pattern: "^[ \\t]*\\|?[ \\t]*:?-+:?[ \\t]*(\\|[ \\t]*:?-+:?[ \\t]*)*\\|?[ \\t]*$")
+    /// The dashes may be em or en dashes too: a separator typed with smart
+    /// dashes on, before the editor learned to leave them alone, still reads.
+    private static let separatorRx = try! NSRegularExpression(pattern: "^[ \\t]*\\|?[ \\t]*:?[-\u{2013}\u{2014}]+:?[ \\t]*(\\|[ \\t]*:?[-\u{2013}\u{2014}]+:?[ \\t]*)*\\|?[ \\t]*$")
 
     static func isSeparator(_ line: String) -> Bool {
-        line.contains("-") && separatorRx.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+        line.contains(where: { $0 == "-" || $0 == "\u{2013}" || $0 == "\u{2014}" })
+            && separatorRx.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
     }
 
     /// A line that could be a row: at least one pipe outside a code span.
@@ -132,18 +143,19 @@ enum MarkdownTable {
     /// Pads the cells so the columns line up, and marks the pipes, the
     /// separator and the header for drawing. Fonts and inline styles are
     /// already on the text; the kerns go on top of whatever kern is there.
+    /// The table is as wide as its widest cells, up to `availableWidth`: a
+    /// last column that would run past the page is cut to what fits, and a
+    /// cell longer than that wraps under its own column (the row's head
+    /// indent) rather than under the row.
     static func layOut(_ table: Table, in storage: NSTextStorage, config: StyleConfig,
                        pipeColor: NSColor, ruleColor: NSColor, headerFont: NSFont,
-                       rowParagraph: NSParagraphStyle, lastRowParagraph: NSParagraphStyle) {
+                       rowParagraph: NSParagraphStyle, lastRowParagraph: NSParagraphStyle, availableWidth: CGFloat) {
         let ns = storage.string as NSString
         let columns = table.columns
         guard columns > 0 else { return }
+        let bodyPipe = ("|" as NSString).size(withAttributes: [.font: config.bodyFont]).width
 
         for (index, row) in table.rows.enumerated() {
-            let enclosing = NSRange(location: row.range.location,
-                                    length: min(ns.length, row.range.upperBoundValue + 1) - row.range.location)
-            // Rows sit flush so the hairlines join; the last keeps the page's spacing after it.
-            storage.addAttribute(.paragraphStyle, value: index == table.rows.count - 1 ? lastRowParagraph : rowParagraph, range: enclosing)
             storage.addAttribute(rowKey, value: index, range: row.range)
             if index == 1 {
                 // The separator is a rule, not a line of text: a short line.
@@ -155,6 +167,13 @@ enum MarkdownTable {
             for p in row.pipes {
                 storage.addAttribute(.foregroundColor, value: pipeColor, range: NSRange(location: p, length: 1))
                 storage.addAttribute(pipeKey, value: pipeColor, range: NSRange(location: p, length: 1))
+                if index == 1 {
+                    // A small pipe advances like a body pipe and is drawn centred like one.
+                    let f = storage.attribute(.font, at: p, effectiveRange: nil) as? NSFont ?? config.bodyFont
+                    let w = ("|" as NSString).size(withAttributes: [.font: f]).width
+                    if bodyPipe - w > 0.1 { addKern(bodyPipe - w, at: p, in: storage) }
+                    storage.addAttribute(pipeInsetKey, value: bodyPipe / 2, range: NSRange(location: p, length: 1))
+                }
             }
             if index == 0 {
                 for cell in row.cells where cell.length > 0 {
@@ -186,10 +205,16 @@ enum MarkdownTable {
         // A cell is at least a few spaces wide, so an empty column has room to type in.
         let minimum = ("    " as NSString).size(withAttributes: [.font: config.bodyFont]).width
         for c in 0..<columns { widths[c] = max(widths[c], minimum) }
+        // The last column stops at the page's edge; what is longer wraps.
+        let last = columns - 1
+        var targets = widths
+        let before = widths[0..<last].reduce(0, +) + CGFloat(columns + 1) * bodyPipe
+        let room = availableWidth - before - 4
+        if room > 0, widths[last] > room { targets[last] = max(room, minimum) }
 
         for (r, row) in table.rows.enumerated() {
             for (c, cell) in row.cells.enumerated() where c < columns {
-                let pad = widths[c] - measured[r][c]
+                let pad = targets[c] - measured[r][c]
                 guard pad > 0.5 else { continue }
                 let opening: Int? = row.pipes.first { $0 == cell.location - 1 }
                 let closing = cell.upperBoundValue   // the pipe after the cell, if any
@@ -210,6 +235,34 @@ enum MarkdownTable {
                     if let t = tail { addKern(pad - half, at: t, in: storage) }
                 }
             }
+        }
+
+        // Where each row's last column begins, measured as padded, for the
+        // lines of a cell that wraps; and the table's right edge, read off
+        // the first row whose last cell fits, for a closing pipe carried to a
+        // later line by one that did not.
+        var edge: CGFloat?
+        var starts: [CGFloat] = []
+        for (r, row) in table.rows.enumerated() {
+            guard let cell = row.cells.last else { starts.append(0); continue }
+            let textStart = textRange(of: cell, in: ns).location
+            starts.append(width(of: NSRange(location: row.range.location, length: textStart - row.range.location),
+                                in: storage, hideSyntax: config.hideSyntax))
+            if edge == nil, r != 1, measured[r][last] <= targets[last] + 0.5,
+               let closing = row.pipes.last, closing == cell.upperBoundValue {
+                edge = width(of: NSRange(location: row.range.location, length: closing - row.range.location),
+                             in: storage, hideSyntax: config.hideSyntax) + bodyPipe / 2
+            }
+        }
+        let tableEdge = edge ?? ((starts.first ?? 0) + targets[last] + bodyPipe / 2)
+        for (r, row) in table.rows.enumerated() {
+            let enclosing = NSRange(location: row.range.location,
+                                    length: min(ns.length, row.range.upperBoundValue + 1) - row.range.location)
+            // Rows sit flush so the hairlines join; the last keeps the page's spacing after it.
+            let style = (r == table.rows.count - 1 ? lastRowParagraph : rowParagraph).mutableCopy() as! NSMutableParagraphStyle
+            style.headIndent = starts[r]
+            storage.addAttribute(.paragraphStyle, value: style, range: enclosing)
+            storage.addAttribute(edgeKey, value: tableEdge, range: row.range)
         }
     }
 
@@ -249,7 +302,9 @@ enum MarkdownTable {
     static func nextCell(from location: Int, in storage: NSTextStorage, backward: Bool) -> Move? {
         let ns = storage.string as NSString
         guard let table = table(ns, around: location) else { return nil }
-        let cells = table.rows.flatMap { $0.cells }
+        // The separator's cells are not for writing in: Tab from the last
+        // heading goes to the first cell under it.
+        let cells = table.rows.enumerated().filter { $0.offset != 1 }.flatMap { $0.element.cells }
         guard let here = cells.firstIndex(where: { NSLocationInRange(location, NSRange(location: $0.location, length: $0.length + 1)) })
             ?? cells.lastIndex(where: { $0.location <= location }) else { return nil }
         let target = here + (backward ? -1 : 1)

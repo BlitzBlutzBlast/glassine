@@ -45,6 +45,15 @@ check("rtf heading", rtf("<h1>Title</h1><p>Body text here.</p>"), "# Title\nBody
 check("chrome styled", html("<meta charset='utf-8'><ul style=\"margin:0\"><li style=\"font-weight:400\"><span style=\"font-weight:700\">Bold</span> item</li><li>Plain</li></ul>"),
       "- **Bold** item\n- Plain")
 check("plain tidy", PasteMarkdown.tidyPlain("• One\n\t• Two\n1) Three\n2)\tFour\nplain – dash"), "- One\n    - Two\n1. Three\n2. Four\nplain – dash")
+check("smart-dashed separator", PasteMarkdown.tidyPlain("| Level | IC7 |\n| — | — |\n| Team | CoE |\n|–|:–:|\nso — then"),
+      "| Level | IC7 |\n| --- | --- |\n| Team | CoE |\n|--|:--:|\nso — then")
+check("tabs become a table", PasteMarkdown.text(fromPlain: "Book\tPages\nThe Peregrine\t191\nPilgrim at Tinker Creek\t290\n"),
+      "| Book | Pages |\n| --- | --- |\n| The Peregrine | 191 |\n| Pilgrim at Tinker Creek | 290 |")
+check("tabs with a pipe", PasteMarkdown.tableFromTabs("a|b\tc\nd\te") ?? "nil", "| a\\|b | c |\n| --- | --- |\n| d | e |")
+check("indented code is not a table", PasteMarkdown.tableFromTabs("\tlet x = 1\n\tlet y = 2") == nil ? "nil" : "table", "nil")
+check("ragged tabs are not a table", PasteMarkdown.tableFromTabs("a\tb\nc\td\te") == nil ? "nil" : "table", "nil")
+check("one line is not a table", PasteMarkdown.tableFromTabs("a\tb") == nil ? "nil" : "table", "nil")
+check("html with a markdown separator", html("<p>| a | b |</p><p>| — | — |</p><p>| 1 | 2 |</p>"), "| a | b |\n| --- | --- |\n| 1 | 2 |")
 
 print(failures == 0 ? "all passed" : "\(failures) failed")
 exit(failures == 0 ? 0 : 1)
