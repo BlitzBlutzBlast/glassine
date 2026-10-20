@@ -1668,6 +1668,8 @@ final class AppState: ObservableObject {
             if keepsPagesOpen {
                 add("close-page", "Close page", keys: "⌘W") { [weak self] in self?.closeCurrentPage() }
                 if openPages.count > 1 {
+                    add("close-other-pages", "Close other pages", keys: "⌥⌘W") { [weak self] in self?.closeOtherPages() }
+                    add("close-all-pages", "Close all pages", keys: "⌥⇧⌘W") { [weak self] in self?.closeAllPages() }
                     add("previous-page", "Previous page", keys: "⌥⇥") { [weak self] in self?.switchToPreviousPage() }
                 }
                 // Every open page by name, for a jump without the carousel.

@@ -54,6 +54,7 @@ case "${1:-all}" in
   walked) EXTRA_JSON='"timelapseScope":"everything",' DELAY=5 shoot views-walked -glassine.launchView daily -glassine.shootScript "1.5:walk:1" ;;
   day) DELAY=5 shoot views-day -glassine.shootScript "1.0:day:$(date -v-1d +%Y%m%d)" ;;
   carousel) DELAY=5 shoot views-carousel -glassine.shootScript "1.0:step:fwd;1.6:step:fwd" ;;
+  carouselclose) DELAY=6 shoot views-carouselclose -glassine.shootScript "1.0:step:fwd;1.6:step:fwd;2.6:click:713,342" ;;
   pips) DELAY=5 shoot views-pips -glassine.shootScript "1.0:hover:262,829;1.3:hover:262,829" ;;
   look) shoot views-look -glassine.launchView settings:look ;;
   behind) shoot views-behind -glassine.launchView backdrops ;;

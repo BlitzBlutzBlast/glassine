@@ -10,7 +10,8 @@ every release. Newest version first. Three to five lines a version, each
 
 - **Tables are tables.** A pipe table is drawn as a grid now — a border, a line under every row and at every column, the header on a faint fill — never wider than the page, with a long cell wrapping under its own column. `/table 3x4` starts one at any size. [Tables.](https://docs.glassine.ink/editor/tables)
 - **Smart dashes keep off the separator.** Type `| --- | --- |` and the hyphens stay hyphens; a separator that arrived as `| — | — |` reads as a table anyway, and a paste straightens it.
-- **A paste knows a table of tabs.** A spreadsheet selection becomes a pipe table; a paste of several lines lands on lines of its own; text dragged in from another app is read like a paste.
+- **A paste knows a table of tabs.** A spreadsheet selection becomes a pipe table; a paste of several lines lands on lines of its own; text dragged in from another app is read like a paste. And a pasted heading keeps its room above with the syntax hidden, which it used to lose until the caret visited it.
+- **Closing pages.** ⌥⌘W closes every page but this one, ⌥⇧⌘W all of them; the fanned cards have a × and the footer's pips a right-click menu. [Pages.](https://docs.glassine.ink/library/pages#closing-pages)
 - **A quieter icon.** The Dock icon is the app's own glass again, now in the look it comes with: Midnight over Soft Sky, the g in paper-white on it.
 
 ## 0.2.28 — October 17, 2026

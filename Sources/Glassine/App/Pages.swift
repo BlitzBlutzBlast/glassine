@@ -79,6 +79,29 @@ extension AppState {
         }
     }
 
+    /// File → Close Other Pages (⌥⌘W): every page but the one on screen
+    /// closes, so the stack is one page again. From a pip's menu, every page
+    /// but that one.
+    func closeOtherPages(keeping id: String? = nil) {
+        let keep = id ?? document?.relativePath
+        guard let keep else { return }
+        let pages = settings.data.openPages
+        guard pages.count > 1 || pages.first != keep else { return }
+        settings.data.openPages = pages.contains(keep) ? [keep] : []
+        if document?.relativePath != keep { switchToPage(keep) }
+        if let c = carousel, c.order.count > 1 { carousel = nil }
+    }
+
+    /// File → Close All Pages (⌥⇧⌘W): the stack empties and All Documents
+    /// comes up, the way closing the last page does.
+    func closeAllPages() {
+        guard !settings.data.openPages.isEmpty || document != nil else { return }
+        settings.data.openPages = []
+        carousel = nil
+        closeLooseDocument()
+        showingGallery = true
+    }
+
     /// Switches to a page already open, the page sliding aside: from the
     /// right when the page is further down the stack, from the left otherwise.
     func switchToPage(_ id: String) {
@@ -161,6 +184,21 @@ extension AppState {
         switchToPage(id)
     }
 
+    /// The × on a card clicked: that page closes and the cards close up;
+    /// the carousel stays, so several can go in a row. The last card left
+    /// cannot be closed from here — ⌘W does that, and leaves All Documents.
+    func closeFromCarousel(_ id: String) {
+        guard var c = carousel, c.order.count > 1, let at = c.order.firstIndex(of: id) else { return }
+        c.order.remove(at: at)
+        var pages = settings.data.openPages
+        pages.removeAll { $0 == id }
+        settings.data.openPages = pages
+        c.index = min(c.index > at ? c.index - 1 : c.index, c.order.count - 1)
+        c.anchor = min(c.anchor > at ? c.anchor - 1 : c.anchor, c.order.count - 1)
+        carousel = c
+        ScreenshotMode.note("carousel close \(id)")
+    }
+
     /// The pointer over a card: the highlight follows it, so letting go of
     /// the modifier opens the page under the pointer.
     func hoverCarousel(_ index: Int) {
@@ -184,6 +222,12 @@ extension AppState {
     var carouselCardFrames: [String: CGRect] {
         get { carouselFramesBox.frames }
         set { carouselFramesBox.frames = newValue }
+    }
+
+    /// Where each card's × is, the same way.
+    var carouselCloseFrames: [String: CGRect] {
+        get { carouselFramesBox.closes }
+        set { carouselFramesBox.closes = newValue }
     }
 
     /// The keys: ⌥Tab or ⌃Tab anywhere in the app (⇧ for backwards); ⌫ and
@@ -250,7 +294,9 @@ extension AppState {
             let p = event.locationInWindow
             let point = CGPoint(x: p.x, y: content.bounds.height - p.y)
             ScreenshotMode.note("carousel click at \(point)")
-            if let hit = self.carouselCardFrames.first(where: { $0.value.contains(point) }) {
+            if let close = self.carouselCloseFrames.first(where: { $0.value.contains(point) }) {
+                self.closeFromCarousel(close.key)
+            } else if let hit = self.carouselCardFrames.first(where: { $0.value.contains(point) }) {
                 self.pickFromCarousel(hit.key)
             } else {
                 self.cancelCarousel()
@@ -263,4 +309,5 @@ extension AppState {
 /// The card frames, in a box so the extension can keep them without a stored property.
 final class CarouselFrames {
     var frames: [String: CGRect] = [:]
+    var closes: [String: CGRect] = [:]
 }

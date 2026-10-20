@@ -2638,6 +2638,15 @@ extension GlassineTextView: NSLayoutManagerDelegate {
     /// glyph that is not drawn and takes no room, so `**bold**` reads as bold
     /// and `# Title` as a title. A bullet's `-` is drawn as a bullet. The
     /// characters are all still there; only their glyphs change.
+    ///
+    /// A marker at the start of a paragraph — a heading's `## `, a quote's
+    /// `>`, a task's `- ` — is a control glyph of no advance rather than a
+    /// null glyph. The typesetter lays null glyphs at the start of a
+    /// paragraph into the line before it, after that line's newline, and
+    /// then counts that line as neither the end of its paragraph nor the
+    /// start of the next: a heading pasted in lost the room above it, on
+    /// both sides, until the caret's visit laid its line out again from its
+    /// own boundary. A control glyph starts the paragraph's own line.
     func layoutManager(_ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
                        properties props: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>,
                        font: NSFont, forGlyphRange glyphRange: NSRange) -> Int {
@@ -2668,15 +2677,30 @@ extension GlassineTextView: NSLayoutManagerDelegate {
             var dot: UniChar = 0x2022
             CTFontGetGlyphsForCharacters(unsafeBitCast(font, to: CTFont.self), &dot, &bullet, 1)
         }
+        let ns = storage.string as NSString
+        let leading = hidden.filter { $0.location == 0 || ns.character(at: $0.location - 1) == 10 }
         for i in 0..<count {
             let c = characterIndexes[i]
             if hidden.contains(where: { NSLocationInRange(c, $0) }) {
-                newProps[i] = .null
+                newProps[i] = leading.contains(where: { NSLocationInRange(c, $0) }) ? .controlCharacter : .null
             } else if bullet != 0, bullets.contains(where: { NSLocationInRange(c, $0) }) {
                 newGlyphs[i] = bullet
             }
         }
         layoutManager.setGlyphs(newGlyphs, properties: newProps, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
         return count
+    }
+
+    /// A hidden marker at the start of a paragraph takes no room (see
+    /// shouldGenerateGlyphs); a real control character keeps its own action.
+    func layoutManager(_ layoutManager: NSLayoutManager, shouldUse action: NSLayoutManager.ControlCharacterAction,
+                       forControlCharacterAt charIndex: Int) -> NSLayoutManager.ControlCharacterAction {
+        guard let storage = textStorage, charIndex < storage.length else { return action }
+        let c = (storage.string as NSString).character(at: charIndex)
+        if c != 9, c != 10, c != 13, c != 0x2028, c != 0x2029,
+           storage.attribute(Syntax.hiddenKey, at: charIndex, effectiveRange: nil) != nil {
+            return .zeroAdvancement
+        }
+        return action
     }
 }

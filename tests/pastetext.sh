@@ -4,6 +4,7 @@
 # code editor leave), pasted into a scratch document and read back after the
 # app has had time to second-guess it.
 #   ./tests/pastetext.sh file.md [delay]   → prints the document; dist/preview/paste-text.jpg
+#   THEN=120,0 puts the caret somewhere a second after the paste; HIDE, FONT, COLUMN, THEME, WINDOW, PAGE, CARET as named
 set -euo pipefail
 cd "$(dirname "$0")/.."
 APP="$PWD/build/Glassine.app"
@@ -19,7 +20,7 @@ json='{"fontSize":'"${FONT:-17}"',"columnWidth":'"${COLUMN:-680}"',"sidebarVisib
 b64=$(printf '%s' "$json" | base64 | tr -d '\n')
 rm -f "$T/paste-text.png" "$T/paste-text.png.status" "$T/log.txt"
 open -n "$APP" --args -glassine.shoot paste-text.png -glassine.launchWindow "${WINDOW:-1200x860}" -glassine.shootDelay "$DELAY" \
-  -glassine.launchCaret "${CARET:-14}" -glassine.launchSettings "$b64" -glassine.shootPaste 1
+  -glassine.launchCaret "${CARET:-14}" -glassine.launchSettings "$b64" -glassine.shootPaste 1 ${THEN:+-glassine.shootSelectThen "$THEN"}
 w=0; until [[ -f "$T/paste-text.png.status" ]]; do sleep 0.5; w=$((w+1)); (( w > 80 )) && { echo "no status"; exit 1; }; done
 sleep 1.5
 cat "$T/paste-text.png.status"; echo

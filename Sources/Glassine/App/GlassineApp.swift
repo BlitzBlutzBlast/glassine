@@ -273,6 +273,12 @@ struct GlassineCommands: Commands {
             Button("Close Page") { state.closeCurrentPage() }
                 .keyboardShortcut("w", modifiers: .command)
                 .disabled(state.document == nil || state.galleryOnScreen)
+            Button("Close Other Pages") { state.closeOtherPages() }
+                .keyboardShortcut("w", modifiers: [.command, .option])
+                .disabled(state.document == nil || state.galleryOnScreen || state.openPages.count < 2 || !state.keepsPagesOpen)
+            Button("Close All Pages") { state.closeAllPages() }
+                .keyboardShortcut("w", modifiers: [.command, .option, .shift])
+                .disabled(state.openPages.isEmpty || !state.keepsPagesOpen)
             Divider()
             Button("Save Now") { state.document?.save() }
                 .disabled(state.document == nil)

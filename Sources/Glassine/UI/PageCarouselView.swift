@@ -42,7 +42,7 @@ struct PageCarouselView: View {
                         let lit = i == carousel.index
                         let away = i - carousel.index   // negative to the left
                         PageCard(doc: doc, highlighted: lit, current: state.document?.relativePath == doc.id,
-                                 number: i < 9 ? i + 1 : nil)
+                                 number: i < 9 ? i + 1 : nil, closable: lit && docs.count > 1)
                             .frame(width: Self.cardWidth, height: Self.cardHeight)
                             .background(CarouselFrameReporter(id: doc.id))
                             .scaleEffect(lit ? 1 : 0.88)
@@ -73,7 +73,7 @@ struct PageCarouselView: View {
                         }
                         .contentTransition(.opacity)
                     }
-                    Text("⇥ steps · ⌫ closes · click, ↩ or let go of \(modifierName) to open")
+                    Text("⇥ steps · ⌫ or × closes · click, ↩ or let go of \(modifierName) to open")
                         .font(.system(size: 10.5, weight: .regular, design: .rounded))
                         .foregroundStyle(theme.text.color.opacity(0.4))
                 }
@@ -82,9 +82,10 @@ struct PageCarouselView: View {
                 .animation(.easeOut(duration: 0.12), value: carousel.index)
             }
             .onPreferenceChange(CarouselFramesKey.self) { state.carouselCardFrames = $0 }
+            .onPreferenceChange(CarouselCloseFramesKey.self) { state.carouselCloseFrames = $0 }
         }
         .ignoresSafeArea()
-        .onDisappear { state.carouselCardFrames = [:] }
+        .onDisappear { state.carouselCardFrames = [:]; state.carouselCloseFrames = [:] }
     }
 
     private var modifierName: String { state.carouselModifier == .control ? "⌃" : "⌥" }
@@ -107,6 +108,23 @@ private struct CarouselFrameReporter: View {
     }
 }
 
+/// Where each card's × is, the same way; the click is matched by hand too.
+struct CarouselCloseFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+private struct CarouselCloseReporter: View {
+    let id: String
+    var body: some View {
+        GeometryReader { g in
+            Color.clear.preference(key: CarouselCloseFramesKey.self, value: [id: g.frame(in: .named("glassineRoot")).insetBy(dx: -6, dy: -6)])
+        }
+    }
+}
+
 /// A page in little: its title and its first lines, as the mosaic's cards
 /// draw them, on a plate of the theme's glass. A small number in the corner
 /// is the key that jumps to it.
@@ -116,6 +134,9 @@ struct PageCard: View {
     var highlighted: Bool
     var current: Bool
     var number: Int? = nil
+    /// A × in the corner, for the card under the highlight: a click on it
+    /// closes the page and the cards close up (Pages.swift matches the click).
+    var closable: Bool = false
 
     private var theme: Theme { state.theme }
     private var lines: [PreviewLine] { Array(MarkdownPreview.lines(for: doc, limit: 12).prefix(11)) }
@@ -128,6 +149,16 @@ struct PageCard: View {
                     .lineLimit(1)
                     .foregroundStyle(theme.headingColor.asColor)
                 Spacer(minLength: 0)
+                if closable {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(theme.text.color.opacity(0.7))
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(theme.text.color.opacity(0.12)))
+                        .background(CarouselCloseReporter(id: doc.id))
+                        .help("Close this page")
+                        .transition(.scale.combined(with: .opacity))
+                }
                 if let number {
                     Text("\(number)")
                         .font(.system(size: 9.5, weight: .semibold, design: .rounded))
@@ -194,8 +225,16 @@ struct PagePips: View {
                         .frame(width: isCurrent ? 12 : 5, height: 5)
                         .contentShape(Rectangle().inset(by: -4))
                         .onHover { inside in hover(id, inside) }
-                        .onTapGesture { state.switchToPage(id) }
-                        .help((state.library.document(withID: id)?.title ?? id) + " — ⌥Tab or ⌃Tab moves between pages")
+                        .onTapGesture {
+                            // ⌥-click closes the page; a click goes to it.
+                            if NSEvent.modifierFlags.contains(.option) { state.closePage(id) } else { state.switchToPage(id) }
+                        }
+                        .help((state.library.document(withID: id)?.title ?? id) + " — click to open, ⌥-click to close, right-click for more")
+                        .contextMenu {
+                            Button("Close Page") { state.closePage(id) }
+                            Button("Close Other Pages") { state.closeOtherPages(keeping: id) }
+                            Button("Close All Pages") { state.closeAllPages() }
+                        }
                         .overlay(alignment: .bottom) {
                             // The preview rides on its own pip so it sits over it.
                             if previewing == id, let doc = state.library.document(withID: id) {
