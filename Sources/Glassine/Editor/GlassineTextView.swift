@@ -919,6 +919,79 @@ final class GlassineTextView: NSTextView {
         return true
     }
 
+    // MARK: - Table rows and columns
+
+    @objc func tableInsertRowAbove(_ sender: Any?) { editTable(.insertRowAbove) }
+    @objc func tableInsertRowBelow(_ sender: Any?) { editTable(.insertRowBelow) }
+    @objc func tableInsertColumnLeft(_ sender: Any?) { editTable(.insertColumnLeft) }
+    @objc func tableInsertColumnRight(_ sender: Any?) { editTable(.insertColumnRight) }
+    @objc func tableDeleteRow(_ sender: Any?) { editTable(.deleteRow) }
+    @objc func tableDeleteColumn(_ sender: Any?) { editTable(.deleteColumn) }
+
+    static let tableActions: [Selector] = [
+        #selector(tableInsertRowAbove(_:)), #selector(tableInsertRowBelow(_:)),
+        #selector(tableInsertColumnLeft(_:)), #selector(tableInsertColumnRight(_:)),
+        #selector(tableDeleteRow(_:)), #selector(tableDeleteColumn(_:)),
+    ]
+
+    /// Whether the caret is in a table, for the Table menu.
+    var caretIsInTable: Bool {
+        MarkdownTable.table(string as NSString, around: selectedRange().location) != nil
+    }
+
+    /// The table rewritten with a row or column more or fewer, as one undo
+    /// step; the caret goes to the cell that was added or that took the
+    /// removed one's place. A beep outside a table, or for an edit that
+    /// would take away the header or the last row or column.
+    private func editTable(_ edit: MarkdownTable.Edit) {
+        guard isEditable, let storage = textStorage,
+              let change = MarkdownTable.edit(edit, at: selectedRange().location, in: storage.string as NSString) else {
+            NSSound.beep(); return
+        }
+        guard shouldChangeText(in: change.range, replacementString: change.text) else { return }
+        storage.replaceCharacters(in: change.range, with: change.text)
+        didChangeText()
+        undoManager?.setActionName(edit.actionName)
+        let caret = NSRange(location: change.caret, length: 0)
+        setSelectedRange(caret)
+        scrollRangeToVisible(caret)
+    }
+
+    /// The right-click menu, with the table's rows and columns when the
+    /// click lands in a table.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        let point = convert(event.locationInWindow, from: nil)
+        let index = characterIndexForInsertion(at: point)
+        guard MarkdownTable.table(string as NSString, around: index) != nil else { return menu }
+        // The edit applies where the click was, as it does in a spreadsheet.
+        if !NSLocationInRange(index, NSRange(location: selectedRange().location, length: selectedRange().length + 1)) {
+            setSelectedRange(NSRange(location: index, length: 0))
+        }
+        let items: [(String, Selector)?] = [
+            ("Insert Row Above", #selector(tableInsertRowAbove(_:))),
+            ("Insert Row Below", #selector(tableInsertRowBelow(_:))),
+            nil,
+            ("Insert Column Left", #selector(tableInsertColumnLeft(_:))),
+            ("Insert Column Right", #selector(tableInsertColumnRight(_:))),
+            nil,
+            ("Delete Row", #selector(tableDeleteRow(_:))),
+            ("Delete Column", #selector(tableDeleteColumn(_:))),
+        ]
+        let table = NSMenu(title: "Table")
+        for item in items {
+            guard case let (title, action)? = item else { table.addItem(.separator()); continue }
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            table.addItem(entry)
+        }
+        let parent = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
+        parent.submenu = table
+        menu.insertItem(parent, at: 0)
+        menu.insertItem(.separator(), at: 1)
+        return menu
+    }
+
     /// The number a numbered item should carry at `width`, judged by the item
     /// just above it at the same depth (1 when it starts a fresh list).
     func nextNumber(before location: Int, width: Int) -> Int {
@@ -1549,6 +1622,32 @@ final class GlassineTextView: NSTextView {
             }
         } else {
             clip.setBoundsOrigin(origin)
+        }
+        scroll.reflectScrolledClipView(clip)
+    }
+
+    /// Goes to a place the outline asked for: the caret at the start of its
+    /// line and the line a little below the top of the page — or, with
+    /// typewriter scrolling on, in the middle, where that keeps the caret.
+    func reveal(location: Int) {
+        guard let storage = textStorage, let scroll = enclosingScrollView else { return }
+        let loc = min(max(0, location), storage.length)
+        window?.makeFirstResponder(self)
+        setSelectedRange(NSRange(location: loc, length: 0))
+        if config.typewriter { typewriterScroll(animated: true); return }
+        layoutManager?.ensureLayout(forCharacterRange: NSRange(location: 0, length: min(storage.length, loc + 1)))
+        let clip = scroll.contentView
+        let maxY = max(0, frame.height - clip.bounds.height)
+        let target = max(0, min(lineTop(of: loc) - 48, maxY))
+        let origin = NSPoint(x: clip.bounds.origin.x, y: target)
+        if GlassineTextView.reduceMotion {
+            clip.setBoundsOrigin(origin)
+        } else {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.22
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                clip.animator().setBoundsOrigin(origin)
+            }
         }
         scroll.reflectScrolledClipView(clip)
     }
@@ -2608,6 +2707,7 @@ final class GlassineTextView: NSTextView {
             #selector(markdownToggleTask(_:)), #selector(markdownChip(_:)), #selector(copyDebugInfo(_:)),
         ]
         if let action = item.action, markdownActions.contains(action) { return isEditable }
+        if let action = item.action, Self.tableActions.contains(action) { return isEditable && caretIsInTable }
         return super.validateUserInterfaceItem(item)
     }
 }

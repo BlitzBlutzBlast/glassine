@@ -33,6 +33,7 @@ struct ShortcutSheet: View {
             ("⌘K", "Command bar"),
             ("⌘F", "Search the library"),
             ("⌘S", "Show or hide the sidebar"),
+            ("⌥⌘O", "Outline: the page's headings, beside it"),
             ("⌘↩  ⌘⇧S", "Review — ⇥ and ⇧⇥ walk its styles"),
             ("⌘⇧↩", "The page beside the editor, following the caret"),
             ("Esc", "Step back: Review → editor → all documents ⇄ Timelapse"),
@@ -53,6 +54,8 @@ struct ShortcutSheet: View {
             ("⌘⇧X", "Strikethrough"),
             ("⌘⇧H", "Chip — a word in a capsule"),
             ("/", "Slash menu: headings, lists, dates…"),
+            ("⌥⌘↑↓  ⌥⌘←→", "In a table: add a row, add a column"),
+            ("⌥⌘⌫  ⇧⌥⌘⌫", "In a table: delete the row, the column"),
             ("⌘⇧F", "Find in document"),
         ]),
         Group(title: "Copy & view", rows: [

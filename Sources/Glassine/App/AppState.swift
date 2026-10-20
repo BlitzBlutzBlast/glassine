@@ -43,6 +43,9 @@ final class AppState: ObservableObject {
     /// The line the caret is on, kept only while a page sits beside the editor,
     /// for that page to follow.
     @Published var caretLine: Int = 0
+    /// Where the caret is, a beat after it moves — kept only while the
+    /// outline is showing, which marks the heading the caret is under.
+    @Published var outlineCaret: Int = 0
     /// Short confirmation shown in the footer ("Copied as Markdown").
     @Published var transientNotice: String?
     private var noticeWork: DispatchWorkItem?
@@ -1591,6 +1594,12 @@ final class AppState: ObservableObject {
     func toggleFloating() {
         settings.data.floatOnTop.toggle()
         showNotice(settings.data.floatOnTop ? "Floating over other windows" : "Floating off")
+    }
+
+    func toggleOutline() {
+        withAnimation(.easeOut(duration: 0.22)) {
+            settings.data.outlineVisible.toggle()
+        }
     }
 
     func toggleSidebar() {
