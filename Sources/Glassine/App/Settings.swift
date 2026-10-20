@@ -160,6 +160,8 @@ struct SettingsData: Codable, Equatable {
     /// and how much of the width it takes. Kept between launches like the sidebar.
     var reviewBeside: Bool = false
     var reviewBesideFraction: Double = 0.5
+    /// The headings of the page on screen, listed beside the editor (⌥⌘O).
+    var outlineVisible: Bool = false
     /// The window floats over other apps' windows, and stays put when Stage
     /// Manager switches sets. ⌘. toggles it.
     var floatOnTop: Bool = false
@@ -240,6 +242,7 @@ struct SettingsData: Codable, Equatable {
         p.sidebarWidth = 0
         p.reviewBeside = false
         p.reviewBesideFraction = 0.5
+        p.outlineVisible = false
         p.reviewStyle = .glass
         p.syncRepository = nil
         p.syncBranch = "main"
@@ -268,6 +271,7 @@ struct SettingsData: Codable, Equatable {
         p.sidebarWidth = other.sidebarWidth
         p.reviewBeside = other.reviewBeside
         p.reviewBesideFraction = other.reviewBesideFraction
+        p.outlineVisible = other.outlineVisible
         p.reviewStyle = other.reviewStyle
         p.syncRepository = other.syncRepository
         p.syncBranch = other.syncBranch
@@ -330,6 +334,7 @@ struct SettingsData: Codable, Equatable {
         sidebarWidth = try c.decodeIfPresent(Double.self, forKey: .sidebarWidth) ?? d.sidebarWidth
         reviewBeside = try c.decodeIfPresent(Bool.self, forKey: .reviewBeside) ?? d.reviewBeside
         reviewBesideFraction = try c.decodeIfPresent(Double.self, forKey: .reviewBesideFraction) ?? d.reviewBesideFraction
+        outlineVisible = try c.decodeIfPresent(Bool.self, forKey: .outlineVisible) ?? d.outlineVisible
         floatOnTop = try c.decodeIfPresent(Bool.self, forKey: .floatOnTop) ?? d.floatOnTop
         backdrop = try c.decodeIfPresent(String.self, forKey: .backdrop) ?? d.backdrop
         backdropDrift = try c.decodeIfPresent(Bool.self, forKey: .backdropDrift) ?? d.backdropDrift

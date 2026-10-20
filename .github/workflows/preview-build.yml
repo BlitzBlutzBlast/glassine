@@ -1,0 +1,59 @@
+# Builds Glassine on GitHub's Macs and publishes it as a pre-release, so a
+# branch can be tried without Xcode on your own Mac. Runs on every push to a
+# feature/ branch, or by hand from the Actions tab.
+#
+# The app is ad-hoc signed (not notarized): the first launch needs a right-click
+# → Open, or System Settings → Privacy & Security → Open Anyway. Its build
+# number is set high, so the updater never swaps it for the official release.
+name: Preview build
+
+on:
+  push:
+    branches: ["feature/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the newest Xcode on the runner
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE"
+          swift --version
+
+      - name: Resolve packages
+        run: swift package resolve
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Mark it as a preview
+        run: |
+          PLIST="build/Glassine.app/Contents/Info.plist"
+          BASE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BASE-preview-$SHORT_SHA" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 9000" "$PLIST"
+          codesign --force --sign - --identifier com.alexlibre.glassine build/Glassine.app
+          codesign --verify --verbose build/Glassine.app
+          echo "VERSION=$BASE-preview-$SHORT_SHA" >> "$GITHUB_ENV"
+
+      - name: Zip
+        run: ditto -c -k --keepParent build/Glassine.app "Glassine-$VERSION.zip"
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="preview-${GITHUB_REF_NAME//\//-}-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" "Glassine-$VERSION.zip" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Preview: $GITHUB_REF_NAME (#$GITHUB_RUN_NUMBER)" \
+            --notes "Test build of \`$GITHUB_REF_NAME\` at $GITHUB_SHA. Not notarized: right-click Glassine.app → Open the first time."

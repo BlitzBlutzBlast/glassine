@@ -358,11 +358,31 @@ struct GlassineCommands: Commands {
             Divider()
             Button("Toggle Task") { send(#selector(GlassineTextView.markdownToggleTask(_:))) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            Divider()
+            Menu("Table") {
+                Button("Insert Row Above") { send(#selector(GlassineTextView.tableInsertRowAbove(_:))) }
+                    .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                Button("Insert Row Below") { send(#selector(GlassineTextView.tableInsertRowBelow(_:))) }
+                    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                Divider()
+                Button("Insert Column Left") { send(#selector(GlassineTextView.tableInsertColumnLeft(_:))) }
+                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                Button("Insert Column Right") { send(#selector(GlassineTextView.tableInsertColumnRight(_:))) }
+                    .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                Divider()
+                Button("Delete Row") { send(#selector(GlassineTextView.tableDeleteRow(_:))) }
+                    .keyboardShortcut(.delete, modifiers: [.command, .option])
+                Button("Delete Column") { send(#selector(GlassineTextView.tableDeleteColumn(_:))) }
+                    .keyboardShortcut(.delete, modifiers: [.command, .option, .shift])
+            }
+            .disabled(state.document == nil || state.galleryOnScreen || state.reviewMode)
         }
 
         CommandGroup(after: .sidebar) {
             Button(state.settings.data.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { state.toggleSidebar() }
                 .keyboardShortcut("s", modifiers: .command)
+            Button(state.settings.data.outlineVisible ? "Hide Outline" : "Show Outline") { state.toggleOutline() }
+                .keyboardShortcut("o", modifiers: [.command, .option])
             Button("All Documents") { withWindow { state.showGallery() } }
                 .keyboardShortcut("p", modifiers: .command)
             Button("Search Library") { withWindow { state.focusSearch() } }

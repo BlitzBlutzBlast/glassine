@@ -11,6 +11,9 @@ struct EditorView: NSViewRepresentable {
     /// The line the caret is on, a beat after it moves — asked for only while
     /// a page beside the editor is following it.
     var onCaretLine: ((Int) -> Void)? = nil
+    /// Where the caret is, a beat after it moves — asked for only while the
+    /// outline is showing.
+    var onCaretLocation: ((Int) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -69,9 +72,24 @@ struct EditorView: NSViewRepresentable {
         private var isLoading = false
         private var caretSaveDebouncer = Debouncer(delay: 0.8)
         private var caretLineDebouncer = Debouncer(delay: 0.12)
+        private var caretLocationDebouncer = Debouncer(delay: 0.12)
+        private var revealObserver: NSObjectProtocol?
 
         init(_ parent: EditorView) {
             self.parent = parent
+            super.init()
+            // The outline asks for a heading: the caret goes to it and its
+            // line comes up near the top of the page.
+            revealObserver = NotificationCenter.default.addObserver(forName: .glassineRevealLocation, object: nil, queue: .main) { [weak self] note in
+                guard let self, let textView = self.textView,
+                      let id = note.userInfo?["document"] as? UUID, id == self.documentID,
+                      let location = note.userInfo?["location"] as? Int else { return }
+                textView.reveal(location: location)
+            }
+        }
+
+        deinit {
+            if let revealObserver { NotificationCenter.default.removeObserver(revealObserver) }
         }
 
         func attach(document: DocumentModel, caret: Int?) {
@@ -112,6 +130,11 @@ struct EditorView: NSViewRepresentable {
             let loc = textView.selectedRange().location
             caretSaveDebouncer.call { [weak self] in
                 self?.parent.onCaretMoved(loc)
+            }
+            if parent.onCaretLocation != nil {
+                caretLocationDebouncer.call { [weak self] in
+                    self?.parent.onCaretLocation?(loc)
+                }
             }
             if parent.onCaretLine != nil {
                 caretLineDebouncer.call { [weak self] in

@@ -420,6 +420,87 @@ enum MarkdownTable {
         return Move(selection: textRange(of: cells[target], in: ns), insert: nil)
     }
 
+    // MARK: - Rows and columns
+
+    enum Edit {
+        case insertRowAbove, insertRowBelow, insertColumnLeft, insertColumnRight, deleteRow, deleteColumn
+
+        var actionName: String {
+            switch self {
+            case .insertRowAbove, .insertRowBelow: return "Insert Row"
+            case .insertColumnLeft, .insertColumnRight: return "Insert Column"
+            case .deleteRow: return "Delete Row"
+            case .deleteColumn: return "Delete Column"
+            }
+        }
+    }
+
+    /// The table rewritten with a row or a column added or taken away: the
+    /// range it replaces (the rows, without the last one's newline), the new
+    /// text, and where the caret goes — the cell that was added, or the one
+    /// that took the removed one's place. Nil when the position is not in a
+    /// table, or the edit would leave no table: the header and its separator
+    /// stay, and so do the last body row and the last column.
+    static func edit(_ edit: Edit, at location: Int, in ns: NSString) -> (range: NSRange, text: String, caret: Int)? {
+        guard let table = table(ns, around: location) else { return nil }
+        let columns = table.columns
+        guard columns > 0 else { return nil }
+        // Where the caret is: its row, and the cell it is in or just after.
+        let rowIndex = table.rows.firstIndex { NSLocationInRange(location, NSRange(location: $0.range.location, length: $0.range.length + 1)) } ?? 0
+        let here = table.rows[rowIndex]
+        let column = min(columns - 1, here.cells.lastIndex { $0.location <= location } ?? 0)
+
+        // Every cell's words, each row as wide as the table.
+        var cells: [[String]] = table.rows.map { row in
+            var words = row.cells.prefix(columns).map { ns.substring(with: $0).trimmingCharacters(in: .whitespaces) }
+            while words.count < columns { words.append("") }
+            return words
+        }
+        let bodyRows = table.rows.count - 2
+        var targetRow = rowIndex, targetColumn = column
+
+        switch edit {
+        case .insertRowAbove, .insertRowBelow:
+            // Nothing goes above the header or between it and its separator:
+            // from either, the new row is the first under them.
+            let at = rowIndex <= 1 ? 2 : (edit == .insertRowAbove ? rowIndex : rowIndex + 1)
+            cells.insert([String](repeating: "", count: columns), at: at)
+            targetRow = at
+        case .deleteRow:
+            guard rowIndex >= 2, bodyRows > 1 else { return nil }
+            cells.remove(at: rowIndex)
+            targetRow = min(rowIndex, cells.count - 1)
+        case .insertColumnLeft, .insertColumnRight:
+            let at = edit == .insertColumnLeft ? column : column + 1
+            // The new column lines up like the one it was added beside.
+            for r in cells.indices { cells[r].insert(r == 1 ? cells[1][column] : "", at: at) }
+            targetColumn = at
+            if targetRow == 1 { targetRow = 0 }
+        case .deleteColumn:
+            guard columns > 1 else { return nil }
+            for r in cells.indices { cells[r].remove(at: column) }
+            targetColumn = min(column, columns - 2)
+            if targetRow == 1 { targetRow = 0 }
+        }
+
+        // Written back with a pipe at each end and a space either side of
+        // every cell's words, the way a new table is.
+        let start = table.rows[0].range.location
+        let replaced = NSRange(location: start, length: table.rows[table.rows.count - 1].range.upperBoundValue - start)
+        var text = ""
+        var caret = start
+        for (r, row) in cells.enumerated() {
+            if r > 0 { text += "\n" }
+            text += "|"
+            for (c, words) in row.enumerated() {
+                text += " "
+                if r == targetRow && c == targetColumn { caret = start + text.nsLength }
+                text += (r == 1 && words.isEmpty ? "---" : words) + " |"
+            }
+        }
+        return (replaced, text, caret)
+    }
+
     /// The words of a cell, without the spaces that keep them off the pipes.
     static func textRange(of cell: NSRange, in ns: NSString) -> NSRange {
         var start = cell.location, end = cell.upperBoundValue

@@ -8,6 +8,7 @@ struct EditorContainerView: View {
 
     private var theme: Theme { state.theme }
     private var beside: Bool { state.settings.data.reviewBeside }
+    private var outline: Bool { state.settings.data.outlineVisible }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -28,6 +29,16 @@ struct EditorContainerView: View {
                             .transition(state.pageSlide == 0 ? .opacity : .asymmetric(
                                 insertion: .move(edge: state.pageSlide > 0 ? .trailing : .leading).combined(with: .opacity),
                                 removal: .move(edge: state.pageSlide > 0 ? .leading : .trailing).combined(with: .opacity)))
+                        if outline {
+                            // The page's headings, on the side away from the sidebar.
+                            Rectangle()
+                                .fill(theme.text.color.opacity(theme.isDark ? 0.10 : 0.12))
+                                .frame(width: 1)
+                                .ignoresSafeArea()
+                            OutlineView(document: doc)
+                                .frame(width: 220)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
                         if beside {
                             // The page beside the editor: rendered as the text changes,
                             // scrolled to the caret's block, sized by the divider.
@@ -50,6 +61,7 @@ struct EditorContainerView: View {
         .animation(.easeOut(duration: 0.24), value: state.showingDaily)
         .animation(.easeOut(duration: 0.18), value: state.reviewMode)
         .animation(.easeOut(duration: 0.22), value: beside)
+        .animation(.easeOut(duration: 0.22), value: outline)
         .animation(state.pageSlide == 0 ? .easeOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.86), value: state.document?.relativePath)
         .animation(.easeOut(duration: 0.3), value: state.zoomingCard)
     }
@@ -72,7 +84,8 @@ struct EditorContainerView: View {
                 initialCaret: state.savedCaret(for: doc.relativePath),
                 onCaretMoved: { state.caretMoved(to: $0) },
                 onEscape: { state.escapeFromEditor() },
-                onCaretLine: beside ? { state.caretLine = $0 } : nil
+                onCaretLine: beside ? { state.caretLine = $0 } : nil,
+                onCaretLocation: outline ? { state.outlineCaret = $0 } : nil
             )
             .id(doc.id)
             .ignoresSafeArea()
