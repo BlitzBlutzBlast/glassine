@@ -213,7 +213,7 @@ enum ScreenshotMode {
             // Every deadline from the one base, so nothing accumulates.
             DispatchQueue.main.asyncAfter(deadline: base + t) {
                 timeLog.append(String(format: "a %.4f %.4f %@ %@", now(), t, kind, arg))
-                perform(kind, arg)
+                perform(kind, arg, due: base + t)
             }
         }
     }
@@ -225,22 +225,28 @@ enum ScreenshotMode {
                   "Book\tPages\nThe Peregrine\t191\nPilgrim at Tinker Creek\t290"),
     ]
 
-    private static func perform(_ kind: String, _ arg: String) {
+    private static func perform(_ kind: String, _ arg: String, due: DispatchTime = .now()) {
         let app = AppState.shared
         note("script \(kind) \(arg)")
         switch kind {
         case _ where kind.hasPrefix("type"):
             // Characters at a typist's pace ("type@30" for 30 ms each, "type@0" all at
-            // once); "\n" in the text is Return.
+            // once); "\n" in the text is Return. Each is due at the step's own
+            // time plus its place, not at now plus its place: a stall that
+            // held the step back then delays the characters by the same
+            // amount as the steps after them, and nothing lands out of order.
             let text = arg.replacingOccurrences(of: "\\n", with: "\n")
             let pace = (kind.split(separator: "@").dropFirst().first.flatMap { Double($0) } ?? 55) / 1000
             let put: (Character) -> Void = { ch in
                 guard let editor = GlassineTextView.current else { return }
+                let before = editor.selectedRange()
                 if ch == "\n" { editor.insertNewline(nil) } else { editor.insertText(String(ch), replacementRange: NSRange(location: NSNotFound, length: 0)) }
+                // Where each character went, for a check of the editing path.
+                note("typed \(ch == "\n" ? "⏎" : String(ch)) at \(before.location)+\(before.length) → \(editor.selectedRange().location)")
             }
             if pace == 0 { text.forEach(put); return }
             for (i, ch) in text.enumerated() {
-                DispatchQueue.main.asyncAfter(deadline: .now() + pace * Double(i)) { put(ch) }
+                DispatchQueue.main.asyncAfter(deadline: due + pace * Double(i)) { put(ch) }
             }
         case "paste": GlassineTextView.current?.paste(nil)
         case "warm":

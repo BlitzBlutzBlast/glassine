@@ -194,61 +194,128 @@ final class GlassineLayoutManager: NSLayoutManager {
             color.setFill()
             NSRect(x: x, y: y, width: width, height: 1).fill()
         }
-        // A table: a hairline the height of the row where each pipe is — the
-        // whole row, every line of it, when a cell wrapped — and a rule
-        // across each cell of the separator row.
-        storage.enumerateAttribute(MarkdownTable.pipeKey, in: chars, options: []) { value, range, _ in
-            guard let color = value as? NSColor else { return }
-            for i in range.location..<range.upperBoundValue {
-                let g = self.glyphIndexForCharacter(at: i)
-                guard g < self.numberOfGlyphs else { continue }
-                let line = self.lineFragmentRect(forGlyphAt: g, effectiveRange: nil)
-                let loc = self.location(forGlyphAt: g)
-                // The row's lines, top to bottom: the words' own rects, plus
-                // the row's air above and below them — not the page's spacing
-                // after the last row, which the line's rect also holds.
-                var rowRange = NSRange(location: i, length: 1)
-                _ = storage.attribute(MarkdownTable.rowKey, at: i, longestEffectiveRange: &rowRange, in: NSRange(location: 0, length: storage.length))
-                let air = (storage.attribute(.paragraphStyle, at: i, effectiveRange: nil) as? NSParagraphStyle)?.paragraphSpacingBefore ?? 0
-                var top = line.minY, bottom = line.maxY
-                var first = line
-                var any = false
-                self.enumerateLineFragments(forGlyphRange: self.glyphRange(forCharacterRange: rowRange, actualCharacterRange: nil)) { rect, used, _, _, _ in
-                    if rect.minY < first.minY { first = rect }
-                    if !any { top = used.minY; bottom = used.maxY; any = true }
-                    top = min(top, used.minY); bottom = max(bottom, used.maxY)
+        // A table: its grid, drawn once per table in view.
+        var drawn: [Int] = []
+        storage.enumerateAttribute(MarkdownTable.gridKey, in: chars, options: []) { value, range, _ in
+            guard let grid = value as? MarkdownTable.Grid else { return }
+            var whole = NSRange(location: range.location, length: 0)
+            _ = storage.attribute(MarkdownTable.gridKey, at: range.location, longestEffectiveRange: &whole,
+                                  in: NSRange(location: 0, length: storage.length))
+            guard !drawn.contains(whole.location) else { return }
+            drawn.append(whole.location)
+            self.drawTable(whole, grid: grid, storage: storage, origin: origin)
+        }
+    }
+
+    /// The grid of one table: a border with rounded corners, a line under
+    /// every row, a line where every pipe is, the header on a faint fill.
+    /// Rows sit flush, each with its air above and below its words, so the
+    /// row's box is the union of its line fragments — less, for the last
+    /// row, the page's spacing after the table.
+    private func drawTable(_ tableRange: NSRange, grid: MarkdownTable.Grid, storage: NSTextStorage, origin: NSPoint) {
+        struct Box { let index: Int; let range: NSRange; let top: CGFloat; let bottom: CGFloat; let firstLine: NSRect }
+        var boxes: [Box] = []
+        storage.enumerateAttribute(MarkdownTable.rowKey, in: tableRange, options: []) { value, range, _ in
+            guard let index = value as? Int else { return }
+            let glyphs = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard glyphs.length > 0 else { return }
+            var top = CGFloat.greatestFiniteMagnitude, bottom = -CGFloat.greatestFiniteMagnitude
+            var first: NSRect?
+            var lastUsed: NSRect?
+            self.enumerateLineFragments(forGlyphRange: glyphs) { rect, used, _, _, _ in
+                top = min(top, rect.minY)
+                bottom = max(bottom, rect.maxY)
+                if first == nil || rect.minY < first!.minY { first = rect }
+                if lastUsed == nil || used.maxY > lastUsed!.maxY { lastUsed = used }
+            }
+            guard let firstLine = first, let used = lastUsed else { return }
+            // The last row's fragment carries the page's spacing after the
+            // table; the row ends after its own air.
+            if let style = storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle,
+               style.paragraphSpacing > style.paragraphSpacingBefore + 0.5 {
+                bottom = min(bottom, used.maxY + style.paragraphSpacingBefore)
+            }
+            boxes.append(Box(index: index, range: range, top: top, bottom: bottom, firstLine: firstLine))
+        }
+        boxes.sort { $0.index < $1.index }
+        guard let head = boxes.first, let foot = boxes.last, boxes.count >= 2,
+              let edge = storage.attribute(MarkdownTable.edgeKey, at: head.range.location, effectiveRange: nil) as? CGFloat else { return }
+        let left = (origin.x + head.firstLine.minX + grid.pipe / 2).rounded() - 0.5
+        let right = (origin.x + head.firstLine.minX + edge).rounded() - 0.5
+        let top = (origin.y + head.top).rounded() - 0.5
+        let bottom = (origin.y + foot.bottom).rounded() - 0.5
+        guard right > left + 4, bottom > top + 4 else { return }
+        let frame = NSRect(x: left, y: top, width: right - left, height: bottom - top)
+        let outline = NSBezierPath(roundedRect: frame, xRadius: grid.radius, yRadius: grid.radius)
+
+        // The header, on its fill: down to the middle of the separator's strip.
+        let dividerY: (Box) -> CGFloat = { box in
+            box.index == 1 ? (origin.y + (box.top + box.bottom) / 2).rounded() - 0.5 : (origin.y + box.top).rounded() - 0.5
+        }
+        if let separator = boxes.first(where: { $0.index == 1 }) {
+            NSGraphicsContext.saveGraphicsState()
+            outline.addClip()
+            grid.fill.setFill()
+            NSRect(x: left, y: top, width: right - left, height: dividerY(separator) - top).fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
+        grid.line.setStroke()
+        grid.line.setFill()
+        outline.lineWidth = 1
+        outline.stroke()
+        // A line under every row: the separator's through its middle, the
+        // others along their top edge.
+        for box in boxes where box.index >= 1 {
+            if box.index == 2 { continue }   // its top is the separator's bottom; the separator's middle has the line
+            let y = dividerY(box)
+            NSRect(x: left + 0.5, y: y, width: right - left - 1, height: 1).fill()
+        }
+        // A line where every pipe is, the height of the table, but for the
+        // first and the last, which the border draws. The pipes of the
+        // separator's strip are set small; their line is where a body pipe's
+        // would be. A row with a cell too long for its column has the cells
+        // after that one follow it on its last line, so in that row the
+        // lines stop at that cell's opening pipe.
+        let ns = storage.string as NSString
+        var columns: [CGFloat] = []
+        var merged: [Int: CGFloat] = [:]   // row index → x beyond which it has no column lines
+        for box in boxes where box.index != 1 {
+            let wrapPipe = storage.attribute(MarkdownTable.wrapKey, at: box.range.location, effectiveRange: nil) as? Int
+            storage.enumerateAttribute(MarkdownTable.pipeKey, in: box.range, options: []) { value, range, _ in
+                guard value != nil else { return }
+                for i in range.location..<range.upperBoundValue {
+                    if let w = wrapPipe, i > w { continue }
+                    let g = self.glyphIndexForCharacter(at: i)
+                    guard g < self.numberOfGlyphs else { continue }
+                    let line = self.lineFragmentRect(forGlyphAt: g, effectiveRange: nil)
+                    guard line.minY <= box.firstLine.minY + 0.5 else { continue }   // only on the row's first line
+                    let loc = self.location(forGlyphAt: g)
+                    let x: CGFloat
+                    if let inset = storage.attribute(MarkdownTable.pipeInsetKey, at: i, effectiveRange: nil) as? CGFloat {
+                        x = line.minX + loc.x + inset
+                    } else {
+                        x = line.minX + loc.x + grid.pipe / 2
+                    }
+                    let px = (origin.x + x).rounded() - 0.5
+                    if let w = wrapPipe, i == w { merged[box.index] = px }
+                    if i == box.range.location { continue }
+                    // The closing pipe: nothing but spaces after it in the row.
+                    let after = NSRange(location: i + 1, length: box.range.upperBoundValue - i - 1)
+                    if after.length == 0 || ns.substring(with: after).trimmingCharacters(in: .whitespaces).isEmpty { continue }
+                    if !columns.contains(where: { abs($0 - px) < 1.5 }) { columns.append(px) }
                 }
-                top -= air; bottom += air
-                let x: CGFloat
-                if line.minY > first.minY + 0.5, let edge = storage.attribute(MarkdownTable.edgeKey, at: i, effectiveRange: nil) as? CGFloat {
-                    // The closing pipe of a row whose last cell wrapped sits at
-                    // the end of the cell's last line; the hairline goes at the
-                    // table's edge, where the other rows' closing pipes are.
-                    x = first.minX + edge
-                } else if let inset = storage.attribute(MarkdownTable.pipeInsetKey, at: i, effectiveRange: nil) as? CGFloat {
-                    x = line.minX + loc.x + inset
-                } else {
-                    let advance = self.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: self.textContainer(forGlyphAt: g, effectiveRange: nil)!).width
-                    // The pipe's own glyph width, before any padding kerned onto it.
-                    let font = storage.attribute(.font, at: i, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 16)
-                    let bar = min(advance, ("|" as NSString).size(withAttributes: [.font: font]).width)
-                    x = line.minX + loc.x + bar / 2
-                }
-                color.setFill()
-                NSRect(x: (origin.x + x).rounded() - 0.5, y: origin.y + top, width: 1, height: bottom - top).fill()
             }
         }
-        storage.enumerateAttribute(MarkdownTable.ruleKey, in: chars, options: []) { value, range, _ in
-            guard let color = value as? NSColor else { return }
-            let glyphs = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            guard glyphs.length > 0, let container = self.textContainer(forGlyphAt: glyphs.location, effectiveRange: nil) else { return }
-            let line = self.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
-            let rect = self.boundingRect(forGlyphRange: glyphs, in: container)
-            let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 16)
-            let baseline = origin.y + line.minY + self.location(forGlyphAt: glyphs.location).y
-            let y = (baseline - font.xHeight * 0.55).rounded() - 0.5
-            color.setFill()
-            NSRect(x: origin.x + rect.minX, y: y, width: rect.width, height: 1).fill()
+        for x in columns where x > left + 2 && x < right - 2 {
+            // One segment per row, so a merged row can go without the line.
+            for box in boxes {
+                if let stop = merged[box.index], x > stop + 1.5 { continue }
+                let y0 = box.index == 0 ? top + 0.5 : (origin.y + box.top).rounded() - 0.5
+                let y1 = box.index == boxes.count - 1 ? bottom - 0.5 : (origin.y + box.bottom).rounded() - 0.5
+                guard y1 > y0 else { continue }
+                NSRect(x: x, y: y0, width: 1, height: y1 - y0).fill()
+            }
         }
     }
 

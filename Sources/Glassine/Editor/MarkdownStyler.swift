@@ -37,6 +37,7 @@ final class MarkdownStyler {
     private var quoteParagraph: NSParagraphStyle!
     private var codeParagraph: NSParagraphStyle!
     private var tableRowParagraph: NSParagraphStyle!
+    private var tableSeparatorParagraph: NSParagraphStyle!
     private var tableLastRowParagraph: NSParagraphStyle!
     private var listStyleCache: [String: NSParagraphStyle] = [:]
     private var lastFenceCount = -1
@@ -59,14 +60,21 @@ final class MarkdownStyler {
         quoteParagraph = config.indentedParagraphStyle(firstLineIndent: indent, headIndent: indent, tight: false)
         codeParagraph = config.indentedParagraphStyle(firstLineIndent: 0, headIndent: 0, tight: true)
         // A row has a little air above and below its words, as a table's
-        // cells do; the hairlines run through it, since the spacing belongs
-        // to the row's lines.
-        let air = (config.fontSize * 0.2).rounded()
+        // cells do; the grid's lines run through it, since the spacing
+        // belongs to the row's lines. The separator is a thin strip with
+        // none, where the line under the header is drawn.
+        let air = (config.fontSize * 0.3).rounded()
         let row = config.baseParagraphStyle()
         row.firstLineHeadIndent = 0
         row.paragraphSpacingBefore = air
         row.paragraphSpacing = air
         tableRowParagraph = row
+        let separator = config.baseParagraphStyle()
+        separator.firstLineHeadIndent = 0
+        separator.paragraphSpacingBefore = 0
+        separator.paragraphSpacing = 0
+        separator.lineHeightMultiple = 1
+        tableSeparatorParagraph = separator
         let lastRow = config.baseParagraphStyle()
         lastRow.firstLineHeadIndent = 0
         lastRow.paragraphSpacingBefore = air
@@ -181,11 +189,13 @@ final class MarkdownStyler {
            container.size.width > 20, container.size.width < 50_000 {
             available = container.size.width - 2 * container.lineFragmentPadding
         }
-        MarkdownTable.layOut(table, in: storage, config: config,
-                             pipeColor: theme.text.withAlpha(theme.isDark ? 0.22 : 0.18),
-                             ruleColor: theme.text.withAlpha(theme.isDark ? 0.3 : 0.24),
-                             headerFont: boldFont, rowParagraph: tableRowParagraph, lastRowParagraph: tableLastRowParagraph,
-                             availableWidth: available)
+        let grid = MarkdownTable.Grid(line: theme.text.withAlpha(theme.isDark ? 0.2 : 0.16),
+                                      fill: theme.text.withAlpha(theme.isDark ? 0.05 : 0.04),
+                                      radius: 6,
+                                      pipe: ("|" as NSString).size(withAttributes: [.font: bodyFont!]).width)
+        MarkdownTable.layOut(table, in: storage, config: config, grid: grid,
+                             headerFont: boldFont, rowParagraph: tableRowParagraph, separatorParagraph: tableSeparatorParagraph,
+                             lastRowParagraph: tableLastRowParagraph, availableWidth: available)
     }
 
     /// Restyles every table in the text — for a column that changed width,
