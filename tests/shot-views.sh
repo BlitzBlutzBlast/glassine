@@ -19,6 +19,8 @@ for n in 0 1 2 3 5 6; do
   printf '# %s\n\nMorning: a walk before the fog lifted, then two hours on the essay.\n\n- [ ] Call about the window\n- [x] Post the letter\n\nEvening: read, slept early.\n' "$(day $n)" > "$f"
   touch -t "$(stamp $n)" "$f"
 done
+# A note begun the morning after its day (the file's dates are a day late), on a day with nothing else written.
+printf '# %s\n\n' "$(day 5)" > "$LIB/Daily/$(day 5).md"; touch -t "$(stamp 4)" "$LIB/Daily/$(day 5).md"
 printf '# On Writing Less\n\nThe shorter the sentence, the more it has to carry. A paragraph that says one thing says it twice as loud.\n\n## Cutting\n\nStart at the end. The last line was the first one you meant.\n' > "$LIB/Essays/On Writing Less.md"; touch -t "$(stamp 1)" "$LIB/Essays/On Writing Less.md"
 printf '# Reading list\n\n| Book | Pages |\n| --- | ---: |\n| The Peregrine | 191 |\n| Pilgrim at Tinker Creek | 290 |\n' > "$LIB/Reading list.md"; touch -t "$(stamp 1)" "$LIB/Reading list.md"
 printf '# Talk notes\n\n1. Open with the question\n2. Three examples, short\n3. Close with the first line again\n' > "$LIB/Talk notes.md"; touch -t "$(stamp 1)" "$LIB/Talk notes.md"
@@ -52,6 +54,7 @@ case "${1:-all}" in
   timelapse) shoot views-timelapse -glassine.launchView daily ;;
   everything) EXTRA_JSON='"timelapseScope":"everything",' shoot views-everything -glassine.launchView daily ;;
   walked) EXTRA_JSON='"timelapseScope":"everything",' DELAY=5 shoot views-walked -glassine.launchView daily -glassine.shootScript "1.5:walk:1" ;;
+  latenote) EXTRA_JSON='"timelapseScope":"everything",' DELAY=5 shoot views-latenote -glassine.launchView daily -glassine.shootScript "1.5:walk:3" ;;
   day) DELAY=5 shoot views-day -glassine.shootScript "1.0:day:$(date -v-1d +%Y%m%d)" ;;
   carousel) DELAY=5 shoot views-carousel -glassine.shootScript "1.0:step:fwd;1.6:step:fwd" ;;
   carouselclose) DELAY=6 shoot views-carouselclose -glassine.shootScript "1.0:step:fwd;1.6:step:fwd;2.6:click:713,342" ;;

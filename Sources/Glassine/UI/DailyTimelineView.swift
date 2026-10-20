@@ -50,8 +50,9 @@ struct DailyTimelineView: View {
         var isToday: Bool { Calendar.current.isDateInToday(date) }
         /// Which card is the source of the open-zoom: a document shows under
         /// the day it was last edited and, if different, the day it was made;
-        /// only one of the two can grow into the page.
-        func zoomSource(_ doc: DocumentRef) -> Bool { DailyNotes.dayKey(doc.modified) == key || note?.id == doc.id }
+        /// only one of the two can grow into the page. A day's note is the
+        /// source under its day, and shows nowhere else.
+        func zoomSource(_ doc: DocumentRef) -> Bool { note?.id == doc.id || DailyNotes.dayKey(doc.modified) == key }
     }
 
     /// The days, today first — always today, even with nothing written yet,
@@ -63,9 +64,18 @@ struct DailyTimelineView: View {
         if scope == .everything { keys.formUnion(byDay.keys) }
         let today = DailyNotes.dayKey(Date())
         keys.insert(today)
-        return keys.sorted(by: >).map { key in
+        // A day's note stands under its own day and nowhere else: a note
+        // begun the morning after shows under its day, not under the day it
+        // was written — and never twice, since two cards of one document
+        // both claiming to be the source of the open-zoom left the second a
+        // sliver of a plate.
+        let noteIDs = Set(notes.values.map(\.id))
+        return keys.sorted(by: >).compactMap { key in
             let note = notes[key]
-            let others = scope == .everything ? (byDay[key] ?? []).filter { $0.id != note?.id } : []
+            let others = scope == .everything ? (byDay[key] ?? []).filter { !noteIDs.contains($0.id) } : []
+            // A day with nothing left on it — the morning a note was begun
+            // for the day before, and nothing else — is no day of the corridor.
+            guard note != nil || !others.isEmpty || key == today else { return nil }
             return Day(key: key, date: key == today ? Date() : AppState.date(forDayKey: key), note: note, others: others)
         }
     }
