@@ -7,8 +7,8 @@
 <meta name="description" content="Glassine is a Markdown writing app for the Mac: a sheet of translucent glass, a caret that glides, plain files in iCloud Drive or a private GitHub repository, saved as you type. Free and open source, on the Mac App Store.">
 <meta name="theme-color" content="#120e1d">
 <meta name="color-scheme" content="dark">
-<link rel="icon" href="/favicon.png?v=2d769650" type="image/png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=bb11821b">
+<link rel="icon" href="/favicon.png?v=b372bd5e" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=a8347375">
 <link rel="canonical" href="https://glassine.ink/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Glassine">
@@ -250,7 +250,7 @@
 
 <header class="top">
   <a class="mark" href="/" aria-label="Glassine">
-    <img class="icon" src="/icon.png?v=0828cdf4" alt="" width="28" height="28">
+    <img class="icon" src="/icon.png?v=da92af94" alt="" width="28" height="28">
     <img class="word" src="/wordmark.png?v=dc9cb457" alt="glassine" width="62" height="14">
   </a>
   <nav>
@@ -271,7 +271,7 @@
       <a class="btn" href="https://apps.apple.com/us/app/glassine-writer/id6808032066?mt=12">Get it on the Mac App Store</a>
       <a class="quiet" href="https://github.com/a-libre/glassine/releases/latest/download/Glassine.dmg">or download the .dmg <span aria-hidden="true">↓</span></a>
     </div>
-    <p class="fine">Free and open source. macOS 14 or later. Version <!-- version -->0.2.28<!-- /version -->.</p>
+    <p class="fine">Free and open source. macOS 14 or later. Version <!-- version -->0.2.29<!-- /version -->.</p>
   </section>
 
   <div class="stage" id="film">
@@ -364,12 +364,14 @@
 <section class="band news" id="new">
   <div>
     <h2>What's new</h2>
-    <p class="sub">Version <!-- whats-new-head -->0.2.28 — October 17, 2026<!-- /whats-new-head -->. The <a href="https://docs.glassine.ink/about/changelog">changelog</a> has every line, by day.</p>
+    <p class="sub">Version <!-- whats-new-head -->0.2.29 — October 19, 2026<!-- /whats-new-head -->. The <a href="https://docs.glassine.ink/about/changelog">changelog</a> has every line, by day.</p>
   </div>
   <ul><!-- whats-new -->
-      <li><b>Arrange the wall by hand.</b> Pick up a card in All Documents and carry it: the wall makes room with a spring, and where you let go is where it stays. That becomes <em>Your order</em> — one order for the whole library, the sidebar's folders included. <a href="https://docs.glassine.ink/library/all-documents#your-order">All Documents.</a></li>
-      <li><b>All Documents comes up at once.</b> On a library of ninety documents the wall took a second and a half to appear; it takes a tenth of one now. Each card used to set every line of its preview as a view of its own, under a shadow that drew the whole card again.</li>
-      <li><b>Lighter under motion.</b> The window no longer works out, on every frame of every animation, where it could be dragged by. It is dragged by its top edge now, the way a window is; the glass itself is no longer a handle.</li>
+      <li><b>Tables are tables.</b> A pipe table is drawn as a grid now — a border, a line under every row and at every column, the header on a faint fill — never wider than the page, with a long cell wrapping under its own column. <code>/table 3x4</code> starts one at any size. <a href="https://docs.glassine.ink/editor/tables">Tables.</a></li>
+      <li><b>Smart dashes keep off the separator.</b> Type <code>| --- | --- |</code> and the hyphens stay hyphens; a separator that arrived as <code>| — | — |</code> reads as a table anyway, and a paste straightens it.</li>
+      <li><b>A paste knows a table of tabs.</b> A spreadsheet selection becomes a pipe table; a paste of several lines lands on lines of its own; text dragged in from another app is read like a paste. And a pasted heading keeps its room above with the syntax hidden, which it used to lose until the caret visited it.</li>
+      <li><b>Closing pages.</b> ⌥⌘W closes every page but this one, ⌥⇧⌘W all of them; the fanned cards have a × and the footer's pips a right-click menu. <a href="https://docs.glassine.ink/library/pages#closing-pages">Pages.</a></li>
+      <li><b>A quieter icon.</b> The Dock icon is the app's own glass again, now in the look it comes with: Midnight over Soft Sky, the g in paper-white on it.</li>
     <!-- /whats-new --></ul>
 </section>
 
