@@ -978,7 +978,7 @@ struct GalleryCard: View {
     private var isCurrent: Bool { state.document?.relativePath == doc.id }
     private var starred: Bool { state.settings.isStarred(doc.id) }
     private var lines: [PreviewLine] { MarkdownPreview.lines(for: doc) }
-    private var previewText: AttributedString { MarkdownPreview.attributed(for: doc, theme: theme) }
+    private var previewSegments: [PreviewSegment] { MarkdownPreview.segments(for: doc, theme: theme) }
     /// Another card is being carried over this one: it keeps still.
     private var wallBusy: Bool { (drag?.active ?? false) && !lifted }
     private var lit: Bool { hovering && !wallBusy }
@@ -1094,15 +1094,24 @@ struct GalleryCard: View {
             } else {
                 // One run of text for the whole preview rather than a view
                 // a line: a wall of thirty cards is thirty layouts, not
-                // eight hundred. The fade at the foot is a mask, and a mask
-                // is a layer of its own — so only a preview that overflows
-                // gets one.
-                Text(previewText)
-                    .lineSpacing(2)
-                    .foregroundStyle(theme.text.color.opacity(0.74))
-                    .frame(maxWidth: .infinity, maxHeight: previewCap, alignment: .topLeading)
-                    .clipped()
-                    .modifier(PreviewFade(on: previewOverflows))
+                // eight hundred. A table is the one block drawn as a view,
+                // between the runs on either side of it. The fade at the
+                // foot is a mask, and a mask is a layer of its own — so
+                // only a preview that overflows gets one.
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(previewSegments.enumerated()), id: \.offset) { _, segment in
+                        switch segment {
+                        case .text(let run):
+                            Text(run).lineSpacing(2)
+                        case .table(let table):
+                            PreviewTableView(table: table, theme: theme)
+                        }
+                    }
+                }
+                .foregroundStyle(theme.text.color.opacity(0.74))
+                .frame(maxWidth: .infinity, maxHeight: previewCap, alignment: .topLeading)
+                .clipped()
+                .modifier(PreviewFade(on: previewOverflows))
             }
         }
         // While the card is flying — growing into the page or shrinking back
@@ -1179,9 +1188,26 @@ struct GalleryCard: View {
 
 // MARK: - Preview rendering
 
+/// A pipe table as a preview shows it: a few columns of a few rows, the
+/// header first, each cell one line.
+struct PreviewTable {
+    enum Alignment { case leading, center, trailing }
+    let alignments: [Alignment]
+    let header: [AttributedString]
+    let rows: [[AttributedString]]
+    /// Rows beyond those shown, and columns beyond those shown.
+    let moreRows: Int
+    let moreColumns: Int
+    var columns: Int { alignments.count }
+    static let maxColumns = 4
+    static let maxRows = 5
+    /// About what the grid stands, a row being a line of small type.
+    var estimatedHeight: CGFloat { CGFloat(rows.count + 1) * 17 + 6 }
+}
+
 struct PreviewLine: Identifiable {
     enum Kind {
-        case heading(Int), body, bullet, numbered(String), quote, code, rule, blank
+        case heading(Int), body, bullet, numbered(String), quote, code, rule, blank, table(PreviewTable)
     }
     let id: Int
     let kind: Kind
@@ -1193,6 +1219,7 @@ struct PreviewLine: Identifiable {
         case .rule: return 9
         case .heading: return 20
         case .code: return 14
+        case .table(let t): return t.estimatedHeight
         default:
             // Roughly 46 characters per line at the preview size, capped at three lines.
             let chars = text.characters.count
@@ -1220,19 +1247,39 @@ enum MarkdownPreview {
         return result
     }
 
-    private static var attributedCache: [String: AttributedString] = [:]
+    private static var segmentCache: [String: [PreviewSegment]] = [:]
 
-    /// The preview as one run of text — the lines set in their kinds, one
-    /// under the other — for a card to lay out in one go. Cached with the
-    /// lines, per theme.
-    static func attributed(for doc: DocumentRef, theme: Theme) -> AttributedString {
+    /// The preview as runs of text — the lines set in their kinds, one
+    /// under the other — for a card to lay out in one go, with any table
+    /// between the runs as a block of its own, since a run of text cannot
+    /// draw a grid. Most previews are one run. Cached with the lines, per
+    /// theme.
+    static func segments(for doc: DocumentRef, theme: Theme) -> [PreviewSegment] {
         let lines = lines(for: doc)
-        guard !lines.isEmpty else { return AttributedString() }
+        guard !lines.isEmpty else { return [] }
         let key = "\(doc.id)|\(doc.modified.timeIntervalSince1970)|\(doc.size)|\(theme.accent.hex)|\((theme.heading ?? theme.text).hex)|\(theme.text.hex)"
-        if let hit = attributedCache[key] { return hit }
-        let result = attributed(lines, theme: theme)
-        if attributedCache.count > 600 { attributedCache.removeAll() }
-        attributedCache[key] = result
+        if let hit = segmentCache[key] { return hit }
+        var result: [PreviewSegment] = []
+        var run: [PreviewLine] = []
+        func flush() {
+            // A blank at either end of a run is the table's own margin.
+            var kept = run
+            while let last = kept.last, case .blank = last.kind { kept.removeLast() }
+            while let first = kept.first, case .blank = first.kind { kept.removeFirst() }
+            if !kept.isEmpty { result.append(.text(attributed(kept, theme: theme))) }
+            run = []
+        }
+        for line in lines {
+            if case .table(let table) = line.kind {
+                flush()
+                result.append(.table(table))
+            } else {
+                run.append(line)
+            }
+        }
+        flush()
+        if segmentCache.count > 600 { segmentCache.removeAll() }
+        segmentCache[key] = result
         return result
     }
 
@@ -1305,9 +1352,23 @@ enum MarkdownPreview {
                 var t = clipped(line.text, lines: 3)
                 t.font = body
                 out.append(t)
+            case .table:
+                // Drawn as a block of its own (segments); never in a run.
+                break
             }
         }
         return out
+    }
+
+    private static let tableSeparator = try! NSRegularExpression(pattern: "^[ \\t]*\\|?[ \\t]*:?[-\u{2013}\u{2014}]+:?[ \\t]*(\\|[ \\t]*:?[-\u{2013}\u{2014}]+:?[ \\t]*)*\\|?[ \\t]*$")
+
+    /// The cells of a row, with the outer pipes off and each cell's spaces trimmed.
+    private static func cells(_ line: String) -> [String] {
+        var t = line.trimmingCharacters(in: .whitespaces)
+        if t.hasPrefix("|") { t.removeFirst() }
+        if t.hasSuffix("|") { t.removeLast() }
+        return t.replacingOccurrences(of: "\\|", with: "\u{0}").components(separatedBy: "|")
+            .map { $0.replacingOccurrences(of: "\u{0}", with: "|").trimmingCharacters(in: .whitespaces) }
     }
 
     private static func match(_ regex: NSRegularExpression, _ s: String) -> NSTextCheckingResult? {
@@ -1329,10 +1390,42 @@ enum MarkdownPreview {
         var skippedTitle = false
         let normalizedTitle = title.lowercased()
 
-        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        let all = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var i = 0
+        while i < all.count {
             if out.count >= limit { break }
-            let line = String(raw)
+            let line = all[i]
+            i += 1
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // A pipe table: a row, a separator under it, rows after it; a few
+            // of its columns and rows, the rest counted.
+            if !inFence, trimmed.contains("|"), i < all.count, match(tableSeparator, all[i]) != nil, all[i].contains(where: { $0 == "-" || $0 == "\u{2013}" || $0 == "\u{2014}" }) {
+                let header = cells(line)
+                let aligns = cells(all[i]).map { c -> PreviewTable.Alignment in
+                    c.hasPrefix(":") && c.hasSuffix(":") ? .center : c.hasSuffix(":") ? .trailing : .leading
+                }
+                i += 1
+                var rows: [[String]] = []
+                while i < all.count, all[i].contains("|"), !all[i].trimmingCharacters(in: .whitespaces).isEmpty {
+                    rows.append(cells(all[i]))
+                    i += 1
+                }
+                let columns = max(header.count, aligns.count)
+                let shown = min(columns, PreviewTable.maxColumns)
+                func fit(_ r: [String]) -> [AttributedString] {
+                    (0..<shown).map { c in inline(c < r.count ? r[c] : "") }
+                }
+                var alignments = (0..<shown).map { c in c < aligns.count ? aligns[c] : .leading }
+                if alignments.count < shown { alignments += Array(repeating: .leading, count: shown - alignments.count) }
+                let table = PreviewTable(alignments: alignments, header: fit(header),
+                                         rows: rows.prefix(PreviewTable.maxRows).map(fit),
+                                         moreRows: max(0, rows.count - PreviewTable.maxRows), moreColumns: columns - shown)
+                if !skippedTitle { skippedTitle = true }
+                out.append(PreviewLine(id: out.count, kind: .table(table), text: AttributedString()))
+                lastWasBlank = false
+                continue
+            }
 
             if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
                 inFence.toggle()
@@ -1397,14 +1490,90 @@ private struct PreviewFade: ViewModifier {
     }
 }
 
+/// A run of a preview's text, or a table between runs.
+enum PreviewSegment {
+    case text(AttributedString)
+    case table(PreviewTable)
+}
+
+/// A pipe table in little: a grid of small type, a line under the header
+/// and between the rows, a line between the columns, the header on a faint
+/// fill — the editor's table at a tenth of the size. Each cell is one line,
+/// cut short with an ellipsis; a note at the foot counts what is left out.
+struct PreviewTableView: View {
+    let table: PreviewTable
+    let theme: Theme
+
+    private var line: Color { theme.text.color.opacity(theme.isDark ? 0.18 : 0.14) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(Array(table.header.enumerated()), id: \.offset) { c, text in
+                        cell(text, column: c, header: true)
+                    }
+                }
+                .background(theme.text.color.opacity(theme.isDark ? 0.06 : 0.045))
+                ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                    Rectangle().fill(line).frame(height: 0.5)
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { c, text in
+                            cell(text, column: c, header: false)
+                        }
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(line, lineWidth: 0.5))
+            if table.moreRows > 0 || table.moreColumns > 0 {
+                Text(more)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(theme.text.color.opacity(0.4))
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var more: String {
+        var parts: [String] = []
+        if table.moreRows > 0 { parts.append("\(table.moreRows) more row\(table.moreRows == 1 ? "" : "s")") }
+        if table.moreColumns > 0 { parts.append("\(table.moreColumns) more column\(table.moreColumns == 1 ? "" : "s")") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func cell(_ text: AttributedString, column: Int, header: Bool) -> some View {
+        let align: Alignment = {
+            switch table.alignments[min(column, table.alignments.count - 1)] {
+            case .leading: return .leading
+            case .center: return .center
+            case .trailing: return .trailing
+            }
+        }()
+        return Text(text)
+            .font(.system(size: 9.5, weight: header ? .semibold : .regular))
+            .foregroundStyle(header ? theme.headingColor.asColor.opacity(0.95) : theme.text.color.opacity(0.78))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2.5)
+            .frame(maxWidth: .infinity, alignment: align)
+            .overlay(alignment: .leading) {
+                if column > 0 { Rectangle().fill(line).frame(width: 0.5) }
+            }
+    }
+}
+
 /// One line of a preview as a view of its own — the fanned pages still draw
-/// theirs this way; the wall sets a card's lines as one run of text.
+/// theirs this way; the wall sets a card's lines as runs of text.
 struct PreviewLineView: View {
     let line: PreviewLine
     let theme: Theme
 
     var body: some View {
         switch line.kind {
+        case .table(let table):
+            PreviewTableView(table: table, theme: theme)
         case .blank:
             Color.clear.frame(height: 3)
         case .rule:
